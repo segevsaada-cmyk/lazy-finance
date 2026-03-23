@@ -7,6 +7,7 @@ import { todayStr } from '@/lib/utils';
 const DEFAULT_SETTINGS: AppSettings = {
   expectedMonthlyIncome: 0,
   warningThreshold: 1000,
+  isOsekMurshe: false,
 };
 
 function dbRowToTransaction(row: Record<string, unknown>): Transaction {
@@ -60,6 +61,7 @@ export function useStorage() {
         setSettings({
           expectedMonthlyIncome: Number(settingsRes.data.expected_monthly_income),
           warningThreshold: Number(settingsRes.data.warning_threshold),
+          isOsekMurshe: settingsRes.data.is_osek_murshe ?? false,
         });
       }
       setLoading(false);
@@ -114,6 +116,7 @@ export function useStorage() {
         user_id: user.id,
         expected_monthly_income: next.expectedMonthlyIncome,
         warning_threshold: next.warningThreshold,
+        is_osek_murshe: next.isOsekMurshe,
         updated_at: new Date().toISOString(),
       });
     },

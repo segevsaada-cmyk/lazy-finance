@@ -22,6 +22,7 @@ export interface Category {
 export interface AppSettings {
   expectedMonthlyIncome: number;
   warningThreshold: number; // show warning when balance drops below this
+  isOsekMurshe: boolean;    // עוסק מורשה — shows VAT card
 }
 
 export interface AppData {

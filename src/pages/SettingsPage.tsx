@@ -1,9 +1,10 @@
 import { useState } from 'react';
-import { Settings, Save, Trash2, Download, LogOut, Phone } from 'lucide-react';
+import { Settings, Save, Trash2, Download, LogOut, Phone, Building2 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
+import { Switch } from '@/components/ui/switch';
 import { BottomNav } from '@/components/budget/BottomNav';
 import { useStorage } from '@/hooks/useStorage';
 import { useAuth } from '@/hooks/useAuth';
@@ -75,6 +76,23 @@ export default function SettingsPage() {
           {user && (
             <span className="text-xs text-muted-foreground mr-auto truncate max-w-[140px]">{user.email}</span>
           )}
+        </div>
+
+        {/* Business type toggle */}
+        <div className="bg-card rounded-2xl border border-border p-5">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Building2 className="w-4 h-4 text-muted-foreground" />
+              <div>
+                <p className="font-semibold text-sm">עוסק מורשה / עסק</p>
+                <p className="text-xs text-muted-foreground">מציג חישוב מע״מ 18% בדשבורד</p>
+              </div>
+            </div>
+            <Switch
+              checked={settings.isOsekMurshe}
+              onCheckedChange={v => updateSettings({ isOsekMurshe: v })}
+            />
+          </div>
         </div>
 
         {/* Budget settings */}

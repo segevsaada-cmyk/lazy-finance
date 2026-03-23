@@ -103,8 +103,8 @@ export default function DashboardPage() {
           </div>
         )}
 
-        {/* VAT card */}
-        <VATCard totalIncome={totalIncome} totalExpenses={totalExpenses} />
+        {/* VAT card — only for עוסק מורשה */}
+        {settings.isOsekMurshe && <VATCard totalIncome={totalIncome} totalExpenses={totalExpenses} />}
 
         {/* Recent transactions */}
         <div className="bg-card rounded-2xl border border-border p-4">
