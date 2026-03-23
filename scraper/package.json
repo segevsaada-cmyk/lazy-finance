@@ -1,0 +1,15 @@
+{
+  "name": "lazy-finance-scraper",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "start": "node index.mjs"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.100.0",
+    "israeli-bank-scrapers": "^6.0.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
