@@ -64,7 +64,7 @@ export default function AuthPage() {
     }
 
     if (data.user) {
-      await supabase.from('user_settings').insert({
+      const { error: settingsError } = await supabase.from('user_settings').insert({
         user_id: data.user.id,
         expected_monthly_income: 0,
         warning_threshold: 1000,
@@ -74,6 +74,11 @@ export default function AuthPage() {
         is_approved: false,
         role: 'user',
       });
+      if (settingsError) {
+        toast.error(`נרשמת אבל יצירת הפרופיל נכשלה: ${settingsError.message}. פנה למנהל המערכת.`);
+        setLoading(false);
+        return;
+      }
     }
 
     navigate('/pending-approval');
