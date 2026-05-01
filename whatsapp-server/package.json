@@ -1,0 +1,19 @@
+{
+  "name": "lazy-finance-whatsapp-server",
+  "version": "1.0.0",
+  "description": "Self-hosted WhatsApp gateway for Lazy Finance via Baileys",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "@whiskeysockets/baileys": "^6.7.18",
+    "dotenv": "^16.4.5",
+    "express": "^4.18.2",
+    "pino": "^9.0.0",
+    "qrcode": "^1.5.3"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
