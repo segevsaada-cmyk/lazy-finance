@@ -13,11 +13,20 @@ export default function AuthPage() {
   const [mounted, setMounted] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [name, setName] = useState('');
+  const [phone, setPhone] = useState('');
 
   useEffect(() => {
     setMounted(true);
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session?.user) navigate('/');
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
+      if (session?.user) {
+        const { data } = await supabase
+          .from('user_settings')
+          .select('is_approved')
+          .eq('user_id', session.user.id)
+          .maybeSingle();
+        navigate(data?.is_approved ? '/' : '/pending-approval');
+      }
     });
   }, [navigate]);
 
@@ -25,81 +34,93 @@ export default function AuthPage() {
     e.preventDefault();
     if (!email || !password) return;
     setLoading(true);
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) {
-      toast.error(
-        error.message.includes('Invalid login credentials')
-          ? 'אימייל או סיסמה שגויים'
-          : error.message
-      );
-    } else {
-      navigate('/');
+      toast.error(error.message.includes('Invalid login credentials') ? 'אימייל או סיסמה שגויים' : error.message);
+      setLoading(false);
+      return;
     }
+    // Check approval status
+    const { data: settings } = await supabase
+      .from('user_settings')
+      .select('is_approved')
+      .eq('user_id', data.user.id)
+      .maybeSingle();
+    navigate(settings?.is_approved ? '/' : '/pending-approval');
     setLoading(false);
   };
 
   const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!email || password.length < 6) {
-      toast.error('סיסמה חייבת להיות לפחות 6 תווים');
+    if (!name.trim()) { toast.error('יש להזין שם מלא'); return; }
+    if (!email || password.length < 6) { toast.error('סיסמה חייבת להיות לפחות 6 תווים'); return; }
+    setLoading(true);
+
+    const { data, error } = await supabase.auth.signUp({ email, password });
+    if (error) {
+      toast.error(error.message.includes('already registered') ? 'האימייל כבר רשום — נסה להתחבר' : error.message);
+      setLoading(false);
       return;
     }
-    setLoading(true);
-    const { error } = await supabase.auth.signUp({ email, password });
-    if (error) {
-      toast.error(
-        error.message.includes('already registered')
-          ? 'האימייל כבר רשום — נסה להתחבר'
-          : error.message
-      );
-    } else {
-      toast.success('ברוך הבא ל-Lazy Finance!');
-      navigate('/');
+
+    if (data.user) {
+      await supabase.from('user_settings').insert({
+        user_id: data.user.id,
+        expected_monthly_income: 0,
+        warning_threshold: 1000,
+        is_osek_murshe: false,
+        full_name: name.trim(),
+        phone: phone.trim() || null,
+        is_approved: false,
+        role: 'user',
+      });
     }
+
+    navigate('/pending-approval');
     setLoading(false);
   };
 
-  const ic =
-    'bg-background border-rose-500/30 text-foreground placeholder:text-muted-foreground/50 focus:border-rose-500 focus-visible:ring-0 focus-visible:ring-offset-0 text-right';
+  const ic = 'bg-background border-border text-foreground placeholder:text-muted-foreground/40 focus:border-rose-500/60 focus-visible:ring-0 focus-visible:ring-offset-0 text-right font-mono';
 
   return (
     <div className="min-h-screen bg-background flex items-center justify-center p-4 relative overflow-hidden">
-      {/* Glow */}
       <div
-        className="pointer-events-none fixed top-0 left-0 right-0 h-72 opacity-20"
-        style={{ background: 'radial-gradient(ellipse 80% 60% at 50% 0%, rgba(244,63,94,0.4), transparent)' }}
+        className="pointer-events-none fixed top-0 left-0 right-0 h-64 opacity-15"
+        style={{ background: 'radial-gradient(ellipse 70% 50% at 50% 0%, rgba(244,63,94,0.5), transparent)' }}
       />
 
       <div
         dir="rtl"
-        className="relative w-full max-w-sm border border-rose-500/30 bg-card rounded-2xl overflow-hidden"
+        className="relative w-full max-w-sm border border-border bg-card rounded-2xl overflow-hidden"
         style={{
-          boxShadow: '0 0 40px rgba(244,63,94,0.1)',
-          transform: mounted ? 'translateY(0) scale(1)' : 'translateY(16px) scale(0.98)',
+          boxShadow: '0 0 60px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.04)',
+          transform: mounted ? 'translateY(0) scale(1)' : 'translateY(20px) scale(0.97)',
           opacity: mounted ? 1 : 0,
-          transition: 'transform 0.4s ease, opacity 0.4s ease',
+          transition: 'transform 0.45s cubic-bezier(0.16,1,0.3,1), opacity 0.45s ease',
         }}
       >
         {/* Header */}
-        <div className="px-6 pt-8 pb-5 text-center border-b border-rose-500/15">
+        <div className="px-6 pt-8 pb-5 text-center border-b border-border/50">
           <h1 className="text-3xl font-black tracking-tight">
             <span style={{ color: '#f43f5e' }}>Lazy</span>{' '}
             <span className="text-foreground">Finance</span>
           </h1>
-          <p className="text-xs text-muted-foreground mt-1">התנהלות פיננסית פשוטה לעצלנים</p>
+          <p className="text-xs text-muted-foreground/70 mt-1.5 tracking-wide">
+            התנהלות פיננסית פשוטה לעצלנים
+          </p>
         </div>
 
         <div className="px-6 py-5">
           {/* Tabs */}
-          <div className="flex mb-5 border border-rose-500/20 rounded-lg overflow-hidden">
+          <div className="flex mb-5 bg-secondary rounded-lg p-0.5 gap-0.5">
             {[{ id: true, label: 'כניסה' }, { id: false, label: 'הרשמה' }].map(tab => (
               <button
                 key={String(tab.id)}
                 type="button"
                 onClick={() => setIsLogin(tab.id)}
-                className={`flex-1 py-2 text-sm font-bold transition-all ${
+                className={`flex-1 py-2 text-sm font-semibold rounded-md transition-all duration-200 ${
                   isLogin === tab.id
-                    ? 'bg-rose-500/15 text-rose-400 border-b-2 border-rose-500'
+                    ? 'bg-card text-foreground shadow-sm'
                     : 'text-muted-foreground hover:text-foreground'
                 }`}
               >
@@ -108,9 +129,38 @@ export default function AuthPage() {
             ))}
           </div>
 
-          <form onSubmit={isLogin ? handleLogin : handleSignup} className="space-y-4">
+          <form onSubmit={isLogin ? handleLogin : handleSignup} className="space-y-3.5">
+            {/* Signup-only fields */}
+            {!isLogin && (
+              <>
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-medium text-muted-foreground">שם מלא</Label>
+                  <Input
+                    type="text"
+                    placeholder="ישראל ישראלי"
+                    value={name}
+                    onChange={e => setName(e.target.value)}
+                    required
+                    disabled={loading}
+                    className={ic}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-medium text-muted-foreground">טלפון (אופציונלי)</Label>
+                  <Input
+                    type="tel"
+                    placeholder="050-0000000"
+                    value={phone}
+                    onChange={e => setPhone(e.target.value)}
+                    disabled={loading}
+                    className={ic}
+                  />
+                </div>
+              </>
+            )}
+
             <div className="space-y-1.5">
-              <Label className="text-xs font-bold tracking-wide text-muted-foreground">אימייל</Label>
+              <Label className="text-xs font-medium text-muted-foreground">אימייל</Label>
               <Input
                 type="email"
                 placeholder="your@email.com"
@@ -122,10 +172,10 @@ export default function AuthPage() {
               />
             </div>
             <div className="space-y-1.5">
-              <Label className="text-xs font-bold tracking-wide text-muted-foreground">סיסמה</Label>
+              <Label className="text-xs font-medium text-muted-foreground">סיסמה</Label>
               <Input
                 type="password"
-                placeholder={isLogin ? '••••••' : 'לפחות 6 תווים'}
+                placeholder={isLogin ? '••••••••' : 'לפחות 6 תווים'}
                 value={password}
                 onChange={e => setPassword(e.target.value)}
                 required
@@ -137,22 +187,27 @@ export default function AuthPage() {
             <button
               type="submit"
               disabled={loading}
-              className="w-full py-3 rounded-xl font-bold text-white transition-all active:scale-95 disabled:opacity-50"
-              style={{ background: 'linear-gradient(135deg, #e11d48, #f43f5e)', boxShadow: '0 4px 16px rgba(244,63,94,0.3)' }}
+              className="w-full py-3 mt-1 rounded-xl font-bold text-white transition-all active:scale-[0.98] disabled:opacity-40"
+              style={{
+                background: 'linear-gradient(135deg, #be123c, #f43f5e)',
+                boxShadow: '0 2px 12px rgba(244,63,94,0.35)',
+              }}
             >
               {loading ? (
                 <Loader2 className="w-4 h-4 animate-spin mx-auto" />
-              ) : isLogin ? (
-                'כניסה'
-              ) : (
-                'צור חשבון חינמי'
-              )}
+              ) : isLogin ? 'כניסה' : 'שלח בקשת הצטרפות'}
             </button>
+
+            {!isLogin && (
+              <p className="text-center text-[11px] text-muted-foreground/60 leading-relaxed">
+                הרשמתך תיבחן על ידי האדמין ותאושר בהקדם
+              </p>
+            )}
           </form>
         </div>
 
-        <div className="px-6 py-3 border-t border-rose-500/10 text-center">
-          <span className="text-[10px] text-muted-foreground/40">Lazy Finance v0.1</span>
+        <div className="px-6 py-3 border-t border-border/30 text-center">
+          <span className="text-[10px] text-muted-foreground/30 font-mono">LAZY FINANCE v1.0</span>
         </div>
       </div>
     </div>
