@@ -1,4 +1,9 @@
 {
+  "functions": {
+    "api/advisor.js": {
+      "includeFiles": "api/_data/**"
+    }
+  },
   "rewrites": [
     { "source": "/api/(.*)", "destination": "/api/$1" },
     { "source": "/(.*)", "destination": "/index.html" }
