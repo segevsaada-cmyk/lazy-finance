@@ -1,11 +1,13 @@
 import { Link, useLocation } from 'react-router-dom';
-import { Home, List, RefreshCw, Settings } from 'lucide-react';
+import { Home, Settings, Target, Compass, BarChart3, List } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 const NAV_ITEMS = [
   { to: '/', icon: Home, label: 'בית' },
-  { to: '/history', icon: List, label: 'היסטוריה' },
-  { to: '/recurring', icon: RefreshCw, label: 'קבועות' },
+  { to: '/reports', icon: BarChart3, label: 'דוחות' },
+  { to: '/goals', icon: Target, label: 'מטרות' },
+  { to: '/liberation', icon: Compass, label: 'שחרור' },
+  { to: '/history', icon: List, label: 'תנועות' },
   { to: '/settings', icon: Settings, label: 'הגדרות' },
 ];
 
@@ -22,7 +24,7 @@ export function BottomNav() {
               key={to}
               to={to}
               className={cn(
-                'flex flex-col items-center gap-1 py-3 px-5 transition-all',
+                'flex flex-col items-center gap-1 py-3 px-3 transition-all',
                 active ? 'text-primary' : 'text-muted-foreground hover:text-foreground'
               )}
             >

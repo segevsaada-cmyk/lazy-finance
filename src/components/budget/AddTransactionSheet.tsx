@@ -12,7 +12,7 @@ import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { CategoryPicker } from '@/components/budget/CategoryPicker';
 import { todayStr } from '@/lib/utils';
-import type { Transaction, TransactionType } from '@/types/budget';
+import type { AccountType, Transaction, TransactionType } from '@/types/budget';
 
 interface AddTransactionSheetProps {
   open: boolean;
@@ -30,6 +30,7 @@ export function AddTransactionSheet({
   editTemplate,
 }: AddTransactionSheetProps) {
   const [type, setType] = useState<TransactionType>(defaultType);
+  const [accountType, setAccountType] = useState<AccountType>('private');
   const [amount, setAmount] = useState('');
   const [categoryId, setCategoryId] = useState('');
   const [note, setNote] = useState('');
@@ -43,6 +44,7 @@ export function AddTransactionSheet({
     if (open) {
       if (editTemplate) {
         setType(editTemplate.type);
+        setAccountType(editTemplate.accountType);
         setAmount(editTemplate.amount.toString());
         setCategoryId(editTemplate.categoryId);
         setNote(editTemplate.note ?? '');
@@ -51,6 +53,7 @@ export function AddTransactionSheet({
         setRecurringDay(editTemplate.recurringDayOfMonth?.toString() ?? '1');
       } else {
         setType(defaultType);
+        setAccountType('private');
         setAmount('');
         setCategoryId('');
         setNote('');
@@ -73,6 +76,7 @@ export function AddTransactionSheet({
     if (!canSubmit) return;
     onSave({
       type,
+      accountType,
       amount: parseFloat(amount),
       categoryId,
       note: note.trim() || undefined,
@@ -114,6 +118,32 @@ export function AddTransactionSheet({
               onClick={() => setType('income')}
             >
               💰 הכנסה
+            </button>
+          </div>
+
+          {/* Account toggle */}
+          <div className="flex rounded-xl overflow-hidden border border-border">
+            <button
+              type="button"
+              className={`flex-1 py-2.5 text-xs font-bold transition-all ${
+                accountType === 'private'
+                  ? 'bg-secondary text-foreground'
+                  : 'bg-transparent text-muted-foreground hover:bg-accent'
+              }`}
+              onClick={() => setAccountType('private')}
+            >
+              🏠 פרטי
+            </button>
+            <button
+              type="button"
+              className={`flex-1 py-2.5 text-xs font-bold transition-all ${
+                accountType === 'business'
+                  ? 'bg-secondary text-foreground'
+                  : 'bg-transparent text-muted-foreground hover:bg-accent'
+              }`}
+              onClick={() => setAccountType('business')}
+            >
+              💼 עסקי
             </button>
           </div>
 

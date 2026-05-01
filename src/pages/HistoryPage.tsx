@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Plus } from 'lucide-react';
+import { Plus, ArrowUpRight, ArrowDownRight } from 'lucide-react';
 import { Separator } from '@/components/ui/separator';
 import { TransactionItem } from '@/components/budget/TransactionItem';
 import { MonthNavigator } from '@/components/budget/MonthNavigator';
@@ -17,16 +17,17 @@ export default function HistoryPage() {
   const [filter, setFilter] = useState<'all' | 'income' | 'expense'>('all');
 
   const { transactions, settings, addTransaction, deleteTransaction } = useStorage();
-  const { monthTransactions, totalIncome, totalExpenses } = useBudget({
-    transactions,
-    settings,
-    year,
-    month,
-  });
+  const { monthTransactions, totalIncome, totalExpenses } = useBudget({ transactions, settings, year, month });
 
   const filtered = [...monthTransactions]
     .filter(t => filter === 'all' || t.type === filter)
     .sort((a, b) => b.date.localeCompare(a.date));
+
+  const FILTERS = [
+    { id: 'all' as const, label: 'הכל', icon: null },
+    { id: 'expense' as const, label: 'הוצאות', icon: <ArrowDownRight className="w-3.5 h-3.5" style={{ color: '#fb7185' }} /> },
+    { id: 'income' as const, label: 'הכנסות', icon: <ArrowUpRight className="w-3.5 h-3.5" style={{ color: '#4ade80' }} /> },
+  ];
 
   return (
     <div dir="rtl" className="min-h-screen bg-background pb-24">
@@ -35,35 +36,34 @@ export default function HistoryPage() {
 
         {/* Filter tabs */}
         <div className="flex rounded-xl overflow-hidden border border-border text-sm font-semibold">
-          {(['all', 'expense', 'income'] as const).map(f => (
+          {FILTERS.map(f => (
             <button
-              key={f}
-              onClick={() => setFilter(f)}
-              className={`flex-1 py-2.5 transition-all ${
-                filter === f ? 'bg-secondary text-foreground' : 'text-muted-foreground hover:bg-accent'
+              key={f.id}
+              onClick={() => setFilter(f.id)}
+              className={`flex-1 py-2.5 flex items-center justify-center gap-1.5 transition-all ${
+                filter === f.id ? 'bg-secondary text-foreground' : 'text-muted-foreground hover:bg-accent'
               }`}
             >
-              {f === 'all' ? 'הכל' : f === 'expense' ? '💸 הוצאות' : '💰 הכנסות'}
+              {f.icon}
+              {f.label}
             </button>
           ))}
         </div>
 
         {/* Summary line */}
-        <div className="flex justify-between text-sm px-1">
+        <div className="flex justify-between text-sm px-1 font-mono tabular-nums">
           <span className="text-muted-foreground">{filtered.length} תנועות</span>
           <span>
             <span style={{ color: '#4ade80' }}>+{formatCurrency(totalIncome)}</span>
-            {' / '}
-            <span style={{ color: '#fb7185' }}>-{formatCurrency(totalExpenses)}</span>
+            <span className="text-muted-foreground mx-1">/</span>
+            <span style={{ color: '#fb7185' }}>−{formatCurrency(totalExpenses)}</span>
           </span>
         </div>
 
         {/* Transactions */}
         <div className="bg-card rounded-2xl border border-border p-4">
           {filtered.length === 0 ? (
-            <p className="text-center text-muted-foreground text-sm py-8">
-              אין תנועות להצגה
-            </p>
+            <p className="text-center text-muted-foreground text-sm py-8">אין תנועות להצגה</p>
           ) : (
             filtered.map((t, i) => (
               <div key={t.id}>
@@ -75,7 +75,6 @@ export default function HistoryPage() {
         </div>
       </div>
 
-      {/* FAB */}
       <button
         onClick={() => setSheetOpen(true)}
         className="fixed bottom-20 left-1/2 -translate-x-1/2 w-14 h-14 rounded-full shadow-2xl flex items-center justify-center z-30 active:scale-90 transition-all"

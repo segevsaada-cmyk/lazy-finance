@@ -1,4 +1,5 @@
 export type TransactionType = 'income' | 'expense';
+export type AccountType = 'private' | 'business';
 
 export interface Transaction {
   id: string;
@@ -10,6 +11,7 @@ export interface Transaction {
   isRecurring: boolean;
   recurringDayOfMonth?: number; // 1–31, only for recurring templates
   recurringParentId?: string;   // links a logged instance to its recurring template
+  accountType: AccountType;     // private / business — defaults to 'private' for legacy rows
 }
 
 export interface Category {

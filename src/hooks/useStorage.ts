@@ -21,6 +21,7 @@ function dbRowToTransaction(row: Record<string, unknown>): Transaction {
     isRecurring: row.is_recurring as boolean,
     recurringDayOfMonth: row.recurring_day_of_month as number | undefined,
     recurringParentId: row.recurring_parent_id as string | undefined,
+    accountType: (row.account_type as 'private' | 'business') ?? 'private',
   };
 }
 
@@ -74,21 +75,35 @@ export function useStorage() {
     async (tx: Omit<Transaction, 'id'>): Promise<Transaction | null> => {
       if (!user) return null;
 
-      const { data, error } = await supabase
+      const baseInsert = {
+        user_id: user.id,
+        type: tx.type,
+        amount: tx.amount,
+        category_id: tx.categoryId,
+        note: tx.note ?? null,
+        date: tx.date,
+        is_recurring: tx.isRecurring,
+        recurring_day_of_month: tx.recurringDayOfMonth ?? null,
+        recurring_parent_id: tx.recurringParentId ?? null,
+      };
+
+      // Try with account_type first; if the column doesn't exist (migration not applied yet),
+      // fall back to insert without it. Once the migration is applied this fast path always wins.
+      let { data, error } = await supabase
         .from('transactions')
-        .insert({
-          user_id: user.id,
-          type: tx.type,
-          amount: tx.amount,
-          category_id: tx.categoryId,
-          note: tx.note ?? null,
-          date: tx.date,
-          is_recurring: tx.isRecurring,
-          recurring_day_of_month: tx.recurringDayOfMonth ?? null,
-          recurring_parent_id: tx.recurringParentId ?? null,
-        })
+        .insert({ ...baseInsert, account_type: tx.accountType })
         .select()
         .single();
+
+      if (error && /account_type/i.test(error.message ?? '')) {
+        const fallback = await supabase
+          .from('transactions')
+          .insert(baseInsert)
+          .select()
+          .single();
+        data = fallback.data;
+        error = fallback.error;
+      }
 
       if (error || !data) return null;
       const newTx = dbRowToTransaction(data);
@@ -133,6 +148,7 @@ export function useStorage() {
         date: date ?? todayStr(),
         isRecurring: false,
         recurringParentId: recurringTemplate.id,
+        accountType: recurringTemplate.accountType,
       });
     },
     [addTransaction]
