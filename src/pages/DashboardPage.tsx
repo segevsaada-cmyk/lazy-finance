@@ -7,6 +7,7 @@ import { TransactionItem } from '@/components/budget/TransactionItem';
 import { RecurringItem } from '@/components/budget/RecurringItem';
 import { MonthNavigator } from '@/components/budget/MonthNavigator';
 import { AddTransactionSheet } from '@/components/budget/AddTransactionSheet';
+import { ChatTransactionSheet } from '@/components/budget/ChatTransactionSheet';
 import { VATCard } from '@/components/budget/VATCard';
 import { BottomNav } from '@/components/budget/BottomNav';
 import { useStorage } from '@/hooks/useStorage';
@@ -18,6 +19,8 @@ export default function DashboardPage() {
   const [year, setYear] = useState(today.getFullYear());
   const [month, setMonth] = useState(today.getMonth() + 1);
   const [sheetOpen, setSheetOpen] = useState(false);
+  const [chatOpen, setChatOpen] = useState(true ? false : false); // default closed
+  // The + button opens chat by default; users can switch to the full form from inside.
 
   const { transactions, settings, addTransaction, deleteTransaction, confirmRecurring } = useStorage();
   const { totalIncome, totalExpenses, balance, balanceStatus, monthTransactions, pendingRecurring, spentPercent } =
@@ -132,7 +135,7 @@ export default function DashboardPage() {
 
       {/* FAB */}
       <button
-        onClick={() => setSheetOpen(true)}
+        onClick={() => setChatOpen(true)}
         className="fixed bottom-20 left-1/2 -translate-x-1/2 w-16 h-16 rounded-full shadow-2xl flex items-center justify-center z-30 active:scale-90 transition-all duration-150"
         style={{
           background: 'linear-gradient(135deg, #e11d48, #f43f5e)',
@@ -143,6 +146,12 @@ export default function DashboardPage() {
         <Plus className="w-8 h-8 text-white" strokeWidth={2.5} />
       </button>
 
+      <ChatTransactionSheet
+        open={chatOpen}
+        onClose={() => setChatOpen(false)}
+        onSave={addTransaction}
+        onSwitchToForm={() => { setChatOpen(false); setSheetOpen(true); }}
+      />
       <AddTransactionSheet
         open={sheetOpen}
         onClose={() => setSheetOpen(false)}
