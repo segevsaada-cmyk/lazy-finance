@@ -188,7 +188,7 @@ export default function LiberationToolsPage() {
           }}
         >
           <div className="flex items-center justify-between">
-            <p className="text-xs font-bold tracking-wide text-foreground">מבוסס על ליווי פיננסי — אליאור זכאים</p>
+            <p className="text-xs font-bold tracking-wide text-foreground">מתודולוגיה שזוקקה ממאות שעות תוכן פיננסי</p>
             <span
               className="text-[10px] font-bold px-2 py-0.5 rounded-full"
               style={{ background: 'rgba(244,63,94,0.15)', color: '#f43f5e' }}

@@ -77,33 +77,33 @@ function buildInsights(
   const expensesByCat = groupByCat(current, 'expense');
   const incomeByCat = groupByCat(current, 'income');
 
-  // ─── 1. Elior framework — 3 categories ────────────────────────────────
+  // ─── 1. Spending category framework — 3 buckets based on expense/income ratio
   if (income > 0) {
     const ratio = expenses / income;
     if (ratio > 1) {
       insights.push({
-        id: 'elior-poor',
+        id: 'spend-overdraft',
         severity: 'danger',
         icon: AlertTriangle,
-        title: 'קטגוריה: ״עניים״ (לפי אליאור)',
+        title: 'מצב: גרעון',
         body: `הוצאת ${formatCurrency(expenses)} מתוך ${formatCurrency(income)} — ${Math.round(ratio * 100)}% מההכנסה.`,
         action: 'הוצאות גבוהות מההכנסות. צריך לקצץ בקטגוריית מותרות (חו״ל, מסעדות, פינוקים).',
       });
     } else if (ratio > 0.9) {
       insights.push({
-        id: 'elior-survivor',
+        id: 'spend-tight',
         severity: 'warning',
         icon: Target,
-        title: 'קטגוריה: ״שורדים״ (לפי אליאור)',
+        title: 'מצב: על הקצה',
         body: `הוצאת ${Math.round(ratio * 100)}% מההכנסה. נותרו ${formatCurrency(balance)}.`,
-        action: 'יעד: מתחת ל־75% כדי לעבור ל״חופשיים״. כל אחוז שתוריד = 300 ש״ח פחות בתיק שאתה צריך.',
+        action: 'יעד: מתחת ל־75% כדי להגיע למצב חופשי. כל אחוז שתוריד = 300 ש״ח פחות בתיק שאתה צריך.',
       });
     } else if (ratio < 0.75) {
       insights.push({
-        id: 'elior-free',
+        id: 'spend-healthy',
         severity: 'good',
         icon: Crown,
-        title: 'קטגוריה: ״חופשיים״ (לפי אליאור)',
+        title: 'מצב: עודף בריא',
         body: `הוצאת רק ${Math.round(ratio * 100)}% מההכנסה — עודף של ${formatCurrency(balance)}.`,
         action: 'מעולה. תוודא שהעודף מושקע (S&P 500, פיקדון נזיל לקרן חירום), לא נשאר בעו״ש.',
       });
