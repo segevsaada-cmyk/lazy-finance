@@ -3,5 +3,8 @@
     "api/advisor.js": {
       "includeFiles": "api/_data/**"
     }
-  }
+  },
+  "rewrites": [
+    { "source": "/:path((?!api).*)", "destination": "/index.html" }
+  ]
 }
