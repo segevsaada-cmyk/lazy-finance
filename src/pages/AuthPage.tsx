@@ -9,6 +9,7 @@ import { toast } from 'sonner';
 export default function AuthPage() {
   const navigate = useNavigate();
   const [isLogin, setIsLogin] = useState(true);
+  const [loginBy, setLoginBy] = useState<'email' | 'phone'>('email');
   const [loading, setLoading] = useState(false);
   const [mounted, setMounted] = useState(false);
   const [email, setEmail] = useState('');
@@ -32,15 +33,34 @@ export default function AuthPage() {
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!email || !password) return;
+    if (!password) return;
+    if (loginBy === 'email' && !email) return;
+    if (loginBy === 'phone' && !phone) return;
     setLoading(true);
-    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+
+    let loginEmail = email;
+    if (loginBy === 'phone') {
+      const r = await fetch('/api/login-by-phone', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone }),
+      });
+      if (!r.ok) {
+        const j = await r.json().catch(() => ({}));
+        toast.error(j.error || 'מספר לא נמצא במערכת');
+        setLoading(false);
+        return;
+      }
+      const j = await r.json();
+      loginEmail = j.email;
+    }
+
+    const { data, error } = await supabase.auth.signInWithPassword({ email: loginEmail, password });
     if (error) {
-      toast.error(error.message.includes('Invalid login credentials') ? 'אימייל או סיסמה שגויים' : error.message);
+      toast.error(error.message.includes('Invalid login credentials') ? 'פרטי התחברות שגויים' : error.message);
       setLoading(false);
       return;
     }
-    // Check approval status
     const { data: settings } = await supabase
       .from('user_settings')
       .select('is_approved')
@@ -164,18 +184,53 @@ export default function AuthPage() {
               </>
             )}
 
-            <div className="space-y-1.5">
-              <Label className="text-xs font-medium text-muted-foreground">אימייל</Label>
-              <Input
-                type="email"
-                placeholder="your@email.com"
-                value={email}
-                onChange={e => setEmail(e.target.value)}
-                required
-                disabled={loading}
-                className={ic}
-              />
-            </div>
+            {/* Login: choose email vs phone */}
+            {isLogin && (
+              <div className="flex bg-secondary/60 rounded-lg p-0.5 gap-0.5">
+                {[{ id: 'email' as const, label: 'מייל' }, { id: 'phone' as const, label: 'נייד' }].map(t => (
+                  <button
+                    key={t.id}
+                    type="button"
+                    onClick={() => setLoginBy(t.id)}
+                    className={`flex-1 py-1.5 text-xs font-semibold rounded-md transition-all duration-150 ${
+                      loginBy === t.id ? 'bg-card text-foreground' : 'text-muted-foreground'
+                    }`}
+                  >
+                    {t.label}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {(!isLogin || loginBy === 'email') && (
+              <div className="space-y-1.5">
+                <Label className="text-xs font-medium text-muted-foreground">אימייל</Label>
+                <Input
+                  type="email"
+                  placeholder="your@email.com"
+                  value={email}
+                  onChange={e => setEmail(e.target.value)}
+                  required
+                  disabled={loading}
+                  className={ic}
+                />
+              </div>
+            )}
+
+            {isLogin && loginBy === 'phone' && (
+              <div className="space-y-1.5">
+                <Label className="text-xs font-medium text-muted-foreground">נייד</Label>
+                <Input
+                  type="tel"
+                  placeholder="050-0000000"
+                  value={phone}
+                  onChange={e => setPhone(e.target.value)}
+                  required
+                  disabled={loading}
+                  className={ic}
+                />
+              </div>
+            )}
             <div className="space-y-1.5">
               <Label className="text-xs font-medium text-muted-foreground">סיסמה</Label>
               <Input
