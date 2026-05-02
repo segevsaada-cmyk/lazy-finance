@@ -260,10 +260,18 @@ export default function AuthPage() {
 
             {!isLogin && (
               <p className="text-center text-[11px] text-muted-foreground/60 leading-relaxed">
-                הרשמתך תיבחן על ידי האדמין ותאושר בהקדם
+                ההרשמה כפופה ל<a href="/terms" className="underline hover:text-foreground">תקנון</a> ול<a href="/privacy" className="underline hover:text-foreground">מדיניות הפרטיות</a>. תיבחן על ידי האדמין ותאושר בהקדם.
               </p>
             )}
           </form>
+
+          <div className="mt-5 pt-4 border-t border-border/30 flex justify-center gap-4 text-[10px] text-muted-foreground/60">
+            <a href="/privacy" className="hover:text-foreground">פרטיות</a>
+            <span>·</span>
+            <a href="/terms" className="hover:text-foreground">תקנון</a>
+            <span>·</span>
+            <a href="/accessibility" className="hover:text-foreground">נגישות</a>
+          </div>
         </div>
 
         <div className="px-6 py-3 border-t border-border/30 text-center">

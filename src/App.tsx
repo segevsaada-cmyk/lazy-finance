@@ -12,6 +12,9 @@ import GoalsPage from '@/pages/GoalsPage';
 import AdvisorPage from '@/pages/AdvisorPage';
 import LiberationToolsPage from '@/pages/LiberationToolsPage';
 import ReportsPage from '@/pages/ReportsPage';
+import PrivacyPage from '@/pages/PrivacyPage';
+import TermsPage from '@/pages/TermsPage';
+import AccessibilityPage from '@/pages/AccessibilityPage';
 
 function Spinner() {
   return (
@@ -53,6 +56,9 @@ export default function App() {
         <Route path="/liberation" element={<ProtectedRoute><LiberationToolsPage /></ProtectedRoute>} />
         <Route path="/reports" element={<ProtectedRoute><ReportsPage /></ProtectedRoute>} />
         <Route path="/admin" element={<AdminRoute><AdminPage /></AdminRoute>} />
+        <Route path="/privacy" element={<PrivacyPage />} />
+        <Route path="/terms" element={<TermsPage />} />
+        <Route path="/accessibility" element={<AccessibilityPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </BrowserRouter>
