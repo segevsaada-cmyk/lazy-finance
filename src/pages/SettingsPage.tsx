@@ -152,24 +152,37 @@ export default function SettingsPage() {
           </p>
         </div>
 
-        {/* WhatsApp bot */}
-        <div className={`${cardClass} space-y-3`}>
-          <h2 className="font-bold text-sm text-foreground flex items-center gap-2">
-            <Phone className="w-4 h-4 text-green-400" />
-            בוט WhatsApp
-          </h2>
-          <p className="text-xs text-muted-foreground">חבר את המספר שלך לרישום תנועות בהודעה</p>
-          <div className="flex gap-2">
-            <Input type="tel" placeholder="050-0000000" value={whatsapp} onChange={e => setWhatsapp(e.target.value)} className="text-right font-mono" />
-            <Button variant="outline" onClick={handleLinkWhatsapp} disabled={!whatsapp.trim()}>חבר</Button>
+        {/* WhatsApp bot — admin only for now */}
+        {isAdmin ? (
+          <div className={`${cardClass} space-y-3`}>
+            <h2 className="font-bold text-sm text-foreground flex items-center gap-2">
+              <Phone className="w-4 h-4 text-green-400" />
+              בוט WhatsApp
+            </h2>
+            <p className="text-xs text-muted-foreground">חבר את המספר שלך לרישום תנועות בהודעה</p>
+            <div className="flex gap-2">
+              <Input type="tel" placeholder="050-0000000" value={whatsapp} onChange={e => setWhatsapp(e.target.value)} className="text-right font-mono" />
+              <Button variant="outline" onClick={handleLinkWhatsapp} disabled={!whatsapp.trim()}>חבר</Button>
+            </div>
+            <div className="text-xs text-muted-foreground bg-secondary/50 rounded-xl p-3 space-y-1.5 font-mono">
+              <p className="font-sans font-semibold text-foreground/70 mb-2 not-italic">דוגמאות:</p>
+              <p><span className="text-muted-foreground/50">›</span> <span className="bg-secondary px-1.5 py-0.5 rounded">קפה 25</span></p>
+              <p><span className="text-muted-foreground/50">›</span> <span className="bg-secondary px-1.5 py-0.5 rounded">קיבלתי 5000 לקוח</span></p>
+              <p><span className="text-muted-foreground/50">›</span> <span className="bg-secondary px-1.5 py-0.5 rounded">יתרה</span></p>
+            </div>
           </div>
-          <div className="text-xs text-muted-foreground bg-secondary/50 rounded-xl p-3 space-y-1.5 font-mono">
-            <p className="font-sans font-semibold text-foreground/70 mb-2 not-italic">דוגמאות:</p>
-            <p><span className="text-muted-foreground/50">›</span> <span className="bg-secondary px-1.5 py-0.5 rounded">קפה 25</span></p>
-            <p><span className="text-muted-foreground/50">›</span> <span className="bg-secondary px-1.5 py-0.5 rounded">קיבלתי 5000 לקוח</span></p>
-            <p><span className="text-muted-foreground/50">›</span> <span className="bg-secondary px-1.5 py-0.5 rounded">יתרה</span></p>
+        ) : (
+          <div className={`${cardClass} space-y-2`}>
+            <h2 className="font-bold text-sm text-foreground flex items-center gap-2">
+              <Phone className="w-4 h-4 text-muted-foreground" />
+              בוט WhatsApp
+              <span className="text-[10px] font-normal px-1.5 py-0.5 rounded-full bg-secondary text-muted-foreground">בקרוב</span>
+            </h2>
+            <p className="text-xs text-muted-foreground leading-relaxed">
+              עוד לא זמין. בקרוב תוכל לרשום הוצאות והכנסות ישירות בוואטסאפ ולשאול את הבוט שאלות פיננסיות. עד אז ההזנה דרך הצ׳אט באפליקציה זהה ברוחה.
+            </p>
           </div>
-        </div>
+        )}
 
         {/* Stats */}
         <div className={`${cardClass} space-y-3`}>
