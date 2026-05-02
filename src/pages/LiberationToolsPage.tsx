@@ -41,7 +41,6 @@ const SECTIONS: Section[] = [
       { kind: 'action', id: 'osh-3m', text: 'פירוט הוצאות עו״ש 3 חודשים אחורה' },
       { kind: 'action', id: 'cards-3m', text: 'פירוט הוצאות כרטיסי אשראי 3 חודשים אחורה' },
       { kind: 'action', id: 'har-hakesef', text: 'בדיקת נכסים פיננסיים', hint: 'har-hakesef.gov.il' },
-      { kind: 'action', id: 'masters', text: 'לסיים מאסטר פיננסי + מאסטר השקעות' },
     ],
   },
   {
@@ -51,10 +50,7 @@ const SECTIONS: Section[] = [
     icon: Target,
     color: '#a855f7',
     items: [
-      { kind: 'kv', label: 'רכב ספורט במקום ליסינג', value: '200–300K · בסיום הליסינג' },
-      { kind: 'kv', label: 'הון עצמי לדירה ראשונה', value: '500K · 5 שנים' },
-      { kind: 'kv', label: 'חצי שנה טיול בחו״ל', value: '120K (20K/חודש) · שנה הקרובה' },
-      { kind: 'kv', label: 'שווי עצמי', value: '10M · עשור' },
+      { kind: 'info', text: 'הגדר כאן יעדים אישיים: רכב, דירה, חופש כלכלי. השתמש בעמוד "יעדים" כדי לעקוב אחרי ההתקדמות שלהם.' },
     ],
   },
   {
@@ -76,10 +72,9 @@ const SECTIONS: Section[] = [
       { kind: 'kv', label: 'הכרחי ולא קבוע', value: 'בגדים, טסט, יום הולדת' },
       { kind: 'kv', label: 'לא הכרחי ולא קבוע', value: 'חו״ל, בונוסים, רכב חדש' },
       { kind: 'info', text: 'תהליך חודשי:' },
-      { kind: 'action', id: 'daily-track', text: 'מעקב יומי של כל הוצאה בוואטסאפ' },
-      { kind: 'action', id: 'weekly-sync', text: 'פעם בשבוע להעביר לטבלה' },
-      { kind: 'action', id: 'eom-review', text: 'בסוף החודש: שימור → שיפור' },
-      { kind: 'action', id: 'mid-month-prep', text: 'ב־15 לחודש להכין תקציב לחודש הבא' },
+      { kind: 'info', text: 'תיעוד יומי של כל הוצאה (אפשר ישירות באפליקציה דרך הצ׳אט)' },
+      { kind: 'info', text: 'בסוף כל חודש סקירה: שימור הטוב, שיפור החלש' },
+      { kind: 'info', text: 'ב־15 לחודש להכין תקציב לחודש הבא' },
     ],
   },
   {
