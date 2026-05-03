@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
-import { CheckCircle2, Users, ArrowRight, Clock, Shield, ShieldOff, UserCheck, UserX } from 'lucide-react';
+import { CheckCircle2, Users, ArrowRight, Clock, Shield, UserCheck, UserX, UserPlus, Trash2, X } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
+import { useAuth } from '@/hooks/useAuth';
 
 interface UserRow {
   user_id: string;
@@ -17,10 +18,15 @@ type Tab = 'pending' | 'all';
 
 export default function AdminPage() {
   const navigate = useNavigate();
+  const { user: currentUser } = useAuth();
   const [tab, setTab] = useState<Tab>('pending');
   const [users, setUsers] = useState<UserRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [showCreate, setShowCreate] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState<UserRow | null>(null);
+  const [form, setForm] = useState({ email: '', password: '', full_name: '', phone: '' });
 
   const refresh = async () => {
     setLoading(true);
@@ -53,19 +59,50 @@ export default function AdminPage() {
     setBusyId(null);
   };
 
-  const setRole = async (userId: string, role: 'admin' | 'user') => {
-    setBusyId(userId);
-    const { error } = await supabase
-      .from('user_settings')
-      .update({ role })
-      .eq('user_id', userId);
-    if (error) {
-      toast.error('שגיאה בעדכון תפקיד');
+  const createUser = async () => {
+    if (!form.email || !form.password) {
+      toast.error('אימייל וסיסמה הם שדות חובה');
+      return;
+    }
+    if (form.password.length < 6) {
+      toast.error('הסיסמה חייבת להיות לפחות 6 תווים');
+      return;
+    }
+    setCreating(true);
+    const { data, error } = await supabase.functions.invoke('admin-users', {
+      body: {
+        action: 'create',
+        email: form.email,
+        password: form.password,
+        full_name: form.full_name || null,
+        phone: form.phone || null,
+        is_approved: true,
+      },
+    });
+    if (error || (data && data.error)) {
+      toast.error('שגיאה ביצירת המשתמש: ' + (data?.error || error?.message || ''));
     } else {
-      toast.success(role === 'admin' ? 'הוגדר כאדמין' : 'הוסר אדמין');
-      setUsers(prev => prev.map(u => u.user_id === userId ? { ...u, role } : u));
+      toast.success('המשתמש נוצר ואושר');
+      setForm({ email: '', password: '', full_name: '', phone: '' });
+      setShowCreate(false);
+      await refresh();
+    }
+    setCreating(false);
+  };
+
+  const deleteUser = async (u: UserRow) => {
+    setBusyId(u.user_id);
+    const { data, error } = await supabase.functions.invoke('admin-users', {
+      body: { action: 'delete', user_id: u.user_id },
+    });
+    if (error || (data && data.error)) {
+      toast.error('שגיאה במחיקה: ' + (data?.error || error?.message || ''));
+    } else {
+      toast.success('המשתמש נמחק');
+      setUsers(prev => prev.filter(x => x.user_id !== u.user_id));
     }
     setBusyId(null);
+    setConfirmDelete(null);
   };
 
   const pending = users.filter(u => !u.is_approved);
@@ -88,10 +125,18 @@ export default function AdminPage() {
           >
             <ArrowRight className="w-4 h-4 text-muted-foreground" />
           </button>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-1">
             <Shield className="w-4 h-4 text-muted-foreground" />
             <h1 className="text-lg font-bold text-foreground">ניהול</h1>
           </div>
+          <button
+            onClick={() => setShowCreate(true)}
+            className="px-3 py-1.5 rounded-xl text-xs font-bold text-white transition-all active:scale-95 flex items-center gap-1.5"
+            style={{ background: 'linear-gradient(135deg, #15803d, #22c55e)' }}
+          >
+            <UserPlus className="w-3.5 h-3.5" />
+            משתמש חדש
+          </button>
         </div>
 
         {/* Stats */}
@@ -209,27 +254,15 @@ export default function AdminPage() {
                         בטל גישה
                       </button>
                     )}
-                    {u.is_approved && (
-                      isAdmin ? (
-                        <button
-                          onClick={() => setRole(u.user_id, 'user')}
-                          disabled={busy}
-                          className="px-3 py-1.5 rounded-lg text-xs font-semibold transition-all active:scale-95 disabled:opacity-50 flex items-center gap-1.5 border border-border text-muted-foreground hover:text-foreground"
-                        >
-                          <ShieldOff className="w-3.5 h-3.5" />
-                          הסר אדמין
-                        </button>
-                      ) : (
-                        <button
-                          onClick={() => setRole(u.user_id, 'admin')}
-                          disabled={busy}
-                          className="px-3 py-1.5 rounded-lg text-xs font-semibold transition-all active:scale-95 disabled:opacity-50 flex items-center gap-1.5"
-                          style={{ background: 'rgba(167,139,250,0.12)', color: '#a78bfa' }}
-                        >
-                          <Shield className="w-3.5 h-3.5" />
-                          הפוך לאדמין
-                        </button>
-                      )
+                    {currentUser?.id !== u.user_id && (
+                      <button
+                        onClick={() => setConfirmDelete(u)}
+                        disabled={busy}
+                        className="px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all active:scale-95 disabled:opacity-50 flex items-center gap-1.5"
+                        style={{ background: 'rgba(244,63,94,0.1)', color: '#f43f5e' }}
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
                     )}
                     {busy && (
                       <div className="w-4 h-4 rounded-full border-2 border-rose-500 border-t-transparent animate-spin self-center" />
@@ -241,6 +274,133 @@ export default function AdminPage() {
           </div>
         )}
       </div>
+
+      {/* Create user modal */}
+      {showCreate && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-end sm:items-center justify-center p-4" onClick={() => !creating && setShowCreate(false)}>
+          <div className="bg-card border border-border rounded-2xl p-5 w-full max-w-md space-y-4" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between">
+              <h2 className="text-base font-bold text-foreground flex items-center gap-2">
+                <UserPlus className="w-4 h-4" /> יצירת משתמש חדש
+              </h2>
+              <button onClick={() => !creating && setShowCreate(false)} className="p-1.5 rounded-lg hover:bg-secondary">
+                <X className="w-4 h-4 text-muted-foreground" />
+              </button>
+            </div>
+            <div className="space-y-3">
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-muted-foreground">אימייל *</label>
+                <input
+                  type="email"
+                  value={form.email}
+                  onChange={e => setForm(f => ({ ...f, email: e.target.value }))}
+                  dir="ltr"
+                  className="w-full px-3 py-2 rounded-lg bg-secondary border border-border text-sm focus:outline-none focus:ring-2 focus:ring-rose-500/40"
+                  placeholder="user@example.com"
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-muted-foreground">סיסמה * (לפחות 6 תווים)</label>
+                <input
+                  type="text"
+                  value={form.password}
+                  onChange={e => setForm(f => ({ ...f, password: e.target.value }))}
+                  dir="ltr"
+                  className="w-full px-3 py-2 rounded-lg bg-secondary border border-border text-sm focus:outline-none focus:ring-2 focus:ring-rose-500/40 font-mono"
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-muted-foreground">שם מלא</label>
+                <input
+                  type="text"
+                  value={form.full_name}
+                  onChange={e => setForm(f => ({ ...f, full_name: e.target.value }))}
+                  className="w-full px-3 py-2 rounded-lg bg-secondary border border-border text-sm focus:outline-none focus:ring-2 focus:ring-rose-500/40"
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-muted-foreground">טלפון</label>
+                <input
+                  type="tel"
+                  value={form.phone}
+                  onChange={e => setForm(f => ({ ...f, phone: e.target.value }))}
+                  dir="ltr"
+                  className="w-full px-3 py-2 rounded-lg bg-secondary border border-border text-sm focus:outline-none focus:ring-2 focus:ring-rose-500/40 font-mono"
+                  placeholder="0501234567"
+                />
+              </div>
+            </div>
+            <div className="flex gap-2 pt-2">
+              <button
+                onClick={() => !creating && setShowCreate(false)}
+                disabled={creating}
+                className="flex-1 px-3 py-2 rounded-lg text-sm font-semibold border border-border text-muted-foreground hover:text-foreground transition-all active:scale-95 disabled:opacity-50"
+              >
+                ביטול
+              </button>
+              <button
+                onClick={createUser}
+                disabled={creating}
+                className="flex-1 px-3 py-2 rounded-lg text-sm font-bold text-white transition-all active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2"
+                style={{ background: 'linear-gradient(135deg, #15803d, #22c55e)' }}
+              >
+                {creating ? (
+                  <div className="w-4 h-4 rounded-full border-2 border-white border-t-transparent animate-spin" />
+                ) : (
+                  <>
+                    <UserPlus className="w-4 h-4" />
+                    צור משתמש
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete confirmation */}
+      {confirmDelete && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4" onClick={() => busyId !== confirmDelete.user_id && setConfirmDelete(null)}>
+          <div className="bg-card border border-border rounded-2xl p-5 w-full max-w-sm space-y-4" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center gap-2">
+              <Trash2 className="w-4 h-4" style={{ color: '#f43f5e' }} />
+              <h2 className="text-base font-bold text-foreground">מחיקת משתמש</h2>
+            </div>
+            <div className="space-y-2 text-sm">
+              <p className="text-muted-foreground">
+                המשתמש <span className="font-bold text-foreground">{confirmDelete.full_name || 'ללא שם'}</span>
+                {confirmDelete.phone && <span className="font-mono text-foreground"> ({confirmDelete.phone})</span>}
+                {' '}יימחק לצמיתות, יחד עם כל הנתונים שלו (תנועות, יעדים, חיבורי בנק, היסטוריית WhatsApp).
+              </p>
+              <p className="text-xs text-rose-400 font-semibold">פעולה זו לא ניתנת לביטול.</p>
+            </div>
+            <div className="flex gap-2 pt-1">
+              <button
+                onClick={() => busyId !== confirmDelete.user_id && setConfirmDelete(null)}
+                disabled={busyId === confirmDelete.user_id}
+                className="flex-1 px-3 py-2 rounded-lg text-sm font-semibold border border-border text-muted-foreground hover:text-foreground transition-all active:scale-95 disabled:opacity-50"
+              >
+                ביטול
+              </button>
+              <button
+                onClick={() => deleteUser(confirmDelete)}
+                disabled={busyId === confirmDelete.user_id}
+                className="flex-1 px-3 py-2 rounded-lg text-sm font-bold text-white transition-all active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2"
+                style={{ background: 'linear-gradient(135deg, #b91c1c, #f43f5e)' }}
+              >
+                {busyId === confirmDelete.user_id ? (
+                  <div className="w-4 h-4 rounded-full border-2 border-white border-t-transparent animate-spin" />
+                ) : (
+                  <>
+                    <Trash2 className="w-4 h-4" />
+                    מחק
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
