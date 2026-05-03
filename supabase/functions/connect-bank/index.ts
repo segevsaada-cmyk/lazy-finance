@@ -2,20 +2,29 @@
 // Receives plaintext bank credentials from the user, encrypts them with
 // AES-256-GCM, and upserts a row in public.bank_connections.
 //
-// The encryption key (BANK_CRED_KEY) is a 32-byte base64 string shared with
-// the scraper. Plaintext credentials never touch the database.
+// Hardening:
+//   * Approval gate: user_settings.is_approved must be true
+//   * Rate limit: max 20 connect_attempt events per user per hour
+//   * Audit log: every attempt (success/fail) recorded in bank_connection_events
+//   * WA notification: if user has a linked WhatsApp number, send an instant
+//     "bank connected" alert so they can detect unauthorized adds
+//   * Plaintext creds never persisted; key (BANK_CRED_KEY) lives only in env
 
 import { createClient } from "npm:@supabase/supabase-js@2";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const BANK_CRED_KEY_B64 = Deno.env.get("BANK_CRED_KEY")!;
+const WA_SERVER_URL = Deno.env.get("WA_SERVER_URL");
+const WA_API_KEY = Deno.env.get("WA_API_KEY");
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
+
+const RATE_LIMIT_PER_HOUR = 20;
 
 const ALLOWED_BANKS = new Set([
   "hapoalim", "leumi", "mizrahi", "discount", "mercantile", "otsarHahayal",
@@ -43,6 +52,15 @@ const FIELDS_BY_BANK: Record<string, string[]> = {
   pagi: ["username", "password"],
 };
 
+const BANK_DISPLAY: Record<string, string> = {
+  hapoalim: "בנק הפועלים", leumi: "בנק לאומי", mizrahi: "בנק מזרחי",
+  discount: "בנק דיסקונט", mercantile: "בנק מרכנתיל", otsarHahayal: "אוצר החייל",
+  max: "מאקס", visaCal: "ויזה כאל", isracard: "ישראכרט", amex: "אמריקן אקספרס",
+  union: "בנק איגוד", beinleumi: "הבינלאומי", massad: "בנק מסד",
+  yahav: "בנק יהב", beyahadBishvilha: "ביחד בשבילך", behatsdaa: "בהצדעה",
+  pagi: 'בנק פאג"י',
+};
+
 function json(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), {
     status,
@@ -66,9 +84,67 @@ async function encryptCredentials(plaintextJson: string): Promise<string> {
   return `${b64(iv)}:${b64(ct)}`;
 }
 
+const admin = createClient(SUPABASE_URL, SERVICE_KEY);
+
+async function logEvent(
+  userId: string,
+  bankId: string | null,
+  eventType: string,
+  details: Record<string, unknown> | null,
+  ip: string,
+  ua: string,
+) {
+  await admin.from("bank_connection_events").insert({
+    user_id: userId,
+    bank_id: bankId,
+    event_type: eventType,
+    details: details ?? {},
+    ip_address: ip || null,
+    user_agent: ua || null,
+  });
+}
+
+async function checkRateLimit(userId: string): Promise<boolean> {
+  const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+  const { count } = await admin
+    .from("bank_connection_events")
+    .select("id", { count: "exact", head: true })
+    .eq("user_id", userId)
+    .eq("event_type", "connect_attempt")
+    .gte("created_at", oneHourAgo);
+  return (count ?? 0) < RATE_LIMIT_PER_HOUR;
+}
+
+async function notifyUserWA(userId: string, bankId: string, action: "connected" | "disconnected") {
+  if (!WA_SERVER_URL || !WA_API_KEY) return;
+  const { data: wa } = await admin
+    .from("whatsapp_users")
+    .select("phone_number")
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (!wa?.phone_number) return;
+
+  const display = BANK_DISPLAY[bankId] ?? bankId;
+  const verb = action === "connected" ? "חובר" : "נותק";
+  const message = `🔔 *התראת אבטחה — Lazy Finance*\n\nחשבון *${display}* ${verb} זה עתה לחשבון שלך.\n\nאם זה לא היית אתה, היכנס מיד ל:\nhttps://lazy-finance.vercel.app/settings\nונתק את החיבור.`;
+
+  try {
+    await fetch(`${WA_SERVER_URL}/send`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-api-key": WA_API_KEY },
+      body: JSON.stringify({ phone: wa.phone_number, message }),
+    });
+  } catch {
+    // notification is best-effort
+  }
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: CORS });
   if (req.method !== "POST") return json({ error: "method not allowed" }, 405);
+
+  const ip = req.headers.get("x-forwarded-for")?.split(",")[0].trim() ?? "";
+  const ua = req.headers.get("user-agent") ?? "";
 
   // Authenticate the caller via their JWT.
   const authHeader = req.headers.get("Authorization") ?? "";
@@ -91,6 +167,17 @@ Deno.serve(async (req) => {
   }
 
   const bankId = (body.bank_id ?? "").trim();
+
+  // Rate limit BEFORE any heavy work, scoped per-user.
+  const allowed = await checkRateLimit(userId);
+  if (!allowed) {
+    await logEvent(userId, bankId || null, "rate_limited", { limit: RATE_LIMIT_PER_HOUR, window_minutes: 60 }, ip, ua);
+    return json({ error: `נחסם זמנית — מקסימום ${RATE_LIMIT_PER_HOUR} ניסיונות חיבור לשעה. נסה שוב בעוד שעה.` }, 429);
+  }
+
+  // Always log the attempt (counts toward rate limit).
+  await logEvent(userId, bankId || null, "connect_attempt", { bank_id: bankId }, ip, ua);
+
   if (!ALLOWED_BANKS.has(bankId)) return json({ error: "unsupported bank" }, 400);
 
   const required = FIELDS_BY_BANK[bankId];
@@ -101,20 +188,27 @@ Deno.serve(async (req) => {
       return json({ error: `missing field: ${f}` }, 400);
     }
   }
-  // Strip any unexpected fields.
   const cleanCreds: Record<string, string> = {};
   for (const f of required) cleanCreds[f] = creds[f];
 
   // Approval gate: only approved users can connect a bank.
-  const admin = createClient(SUPABASE_URL, SERVICE_KEY);
   const { data: settings } = await admin
     .from("user_settings")
     .select("is_approved")
     .eq("user_id", userId)
     .maybeSingle();
-  if (!settings?.is_approved) return json({ error: "user not approved" }, 403);
+  if (!settings?.is_approved) {
+    await logEvent(userId, bankId, "connect_rejected_unapproved", null, ip, ua);
+    return json({ error: "user not approved" }, 403);
+  }
 
-  const ciphertext = await encryptCredentials(JSON.stringify(cleanCreds));
+  let ciphertext: string;
+  try {
+    ciphertext = await encryptCredentials(JSON.stringify(cleanCreds));
+  } catch (e) {
+    await logEvent(userId, bankId, "connect_rejected_crypto", { error: String(e) }, ip, ua);
+    return json({ error: "encryption failure" }, 500);
+  }
 
   const { error: upsertErr } = await admin
     .from("bank_connections")
@@ -127,11 +221,20 @@ Deno.serve(async (req) => {
         is_active: true,
         last_error: null,
         last_sync_status: null,
+        consecutive_failures: 0,
         updated_at: new Date().toISOString(),
       },
       { onConflict: "user_id,bank_id" },
     );
 
-  if (upsertErr) return json({ error: upsertErr.message }, 500);
+  if (upsertErr) {
+    await logEvent(userId, bankId, "connect_db_error", { error: upsertErr.message }, ip, ua);
+    return json({ error: upsertErr.message }, 500);
+  }
+
+  await logEvent(userId, bankId, "connected", { fields: required }, ip, ua);
+  // Fire-and-forget security notification.
+  notifyUserWA(userId, bankId, "connected").catch(() => {});
+
   return json({ ok: true, bank_id: bankId });
 });

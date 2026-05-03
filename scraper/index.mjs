@@ -19,6 +19,9 @@ const SUPABASE_URL = process.env.SUPABASE_URL;
 const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const BANK_CRED_KEY_B64 = process.env.BANK_CRED_KEY;
 const DAYS_BACK = parseInt(process.env.BANK_DAYS_BACK || '30', 10);
+const MAX_CONSECUTIVE_FAILURES = parseInt(process.env.MAX_CONSECUTIVE_FAILURES || '3', 10);
+const WA_SERVER_URL = process.env.WA_SERVER_URL;
+const WA_API_KEY = process.env.WA_API_KEY;
 
 if (!SUPABASE_URL || !SERVICE_KEY || !BANK_CRED_KEY_B64) {
   console.error('❌ Missing env: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, BANK_CRED_KEY required.');
@@ -99,6 +102,43 @@ function guessCategory(description = '', type) {
 }
 
 // ─────────────────────────────────────────────────────────────
+// Audit log + WA notify helpers
+// ─────────────────────────────────────────────────────────────
+async function logEvent(userId, bankId, eventType, details = {}) {
+  try {
+    await supabase.from('bank_connection_events').insert({
+      user_id: userId, bank_id: bankId, event_type: eventType, details,
+    });
+  } catch { /* best effort */ }
+}
+
+const BANK_DISPLAY = {
+  hapoalim: 'בנק הפועלים', leumi: 'בנק לאומי', mizrahi: 'בנק מזרחי',
+  discount: 'בנק דיסקונט', mercantile: 'בנק מרכנתיל', otsarHahayal: 'אוצר החייל',
+  max: 'מאקס', visaCal: 'ויזה כאל', isracard: 'ישראכרט', amex: 'אמריקן אקספרס',
+  union: 'בנק איגוד', beinleumi: 'הבינלאומי', massad: 'בנק מסד',
+  yahav: 'בנק יהב', beyahadBishvilha: 'ביחד בשבילך', behatsdaa: 'בהצדעה',
+  pagi: 'בנק פאג"י',
+};
+
+async function notifyWA(userId, message) {
+  if (!WA_SERVER_URL || !WA_API_KEY) return;
+  try {
+    const { data: wa } = await supabase
+      .from('whatsapp_users')
+      .select('phone_number')
+      .eq('user_id', userId)
+      .maybeSingle();
+    if (!wa?.phone_number) return;
+    await fetch(`${WA_SERVER_URL}/send`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-api-key': WA_API_KEY },
+      body: JSON.stringify({ phone: wa.phone_number, message }),
+    });
+  } catch { /* best effort */ }
+}
+
+// ─────────────────────────────────────────────────────────────
 // Scrape one connection
 // ─────────────────────────────────────────────────────────────
 async function scrapeOne(connection) {
@@ -176,7 +216,7 @@ async function run() {
 
   const { data: connections, error } = await supabase
     .from('bank_connections')
-    .select('id, user_id, bank_id, credentials_encrypted')
+    .select('id, user_id, bank_id, credentials_encrypted, consecutive_failures')
     .eq('is_active', true);
 
   if (error) { console.error('❌ Failed to load connections:', error.message); process.exit(1); }
@@ -205,15 +245,37 @@ async function run() {
         last_sync_at: new Date().toISOString(),
         last_sync_status: stats.errors > 0 ? 'partial' : 'ok',
         last_error: null,
+        consecutive_failures: 0,
       }).eq('id', conn.id);
+
+      await logEvent(conn.user_id, conn.bank_id, 'sync_ok', {
+        imported: stats.imported, skipped: stats.skipped, ms,
+      });
     } catch (err) {
-      console.error(`  ❌ ${label}: ${err.message}`);
+      const failures = (conn.consecutive_failures ?? 0) + 1;
+      const willDisable = failures >= MAX_CONSECUTIVE_FAILURES;
+      const display = BANK_DISPLAY[conn.bank_id] ?? conn.bank_id;
+      console.error(`  ❌ ${label}: ${err.message} (failure #${failures}${willDisable ? ' — auto-disabling' : ''})`);
       totalErrors++;
+
       await supabase.from('bank_connections').update({
         last_sync_at: new Date().toISOString(),
         last_sync_status: 'error',
         last_error: err.message?.slice(0, 500) ?? 'unknown error',
+        consecutive_failures: failures,
+        is_active: willDisable ? false : true,
       }).eq('id', conn.id);
+
+      await logEvent(conn.user_id, conn.bank_id, willDisable ? 'auto_disabled' : 'sync_failed', {
+        error: err.message?.slice(0, 200), consecutive_failures: failures,
+      });
+
+      if (willDisable) {
+        await notifyWA(
+          conn.user_id,
+          `🔕 *Lazy Finance — סנכרון הושעה*\n\nחשבון *${display}* נכשל ${failures} פעמים ברציפות והסנכרון הושעה אוטומטית כדי למנוע נעילה של החשבון בבנק.\n\nכנס ל-https://lazy-finance.vercel.app/settings ובדוק את הסיסמה. אם השתנתה, חבר מחדש.`,
+        );
+      }
     }
   }
 
