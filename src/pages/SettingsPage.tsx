@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Settings, Save, Trash2, Download, LogOut, Phone, Building2, Users, Check, ArrowUpRight } from 'lucide-react';
+import { Settings, Save, Trash2, Download, LogOut, Phone, Building2, Users, Check, ArrowUpRight, Link2 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
@@ -136,7 +136,23 @@ export default function SettingsPage() {
           </Button>
         </div>
 
-        <BankConnectionCard />
+        {/* Bank connection — gated to admin until owner finishes validating his own account */}
+        {isAdmin ? (
+          <BankConnectionCard />
+        ) : (
+          <div
+            className="rounded-2xl border p-5 space-y-2"
+            style={{ borderColor: 'rgba(244,63,94,0.2)', background: 'rgba(244,63,94,0.03)' }}
+          >
+            <h2 className="font-bold text-sm text-foreground flex items-center gap-2">
+              <Link2 className="w-4 h-4" style={{ color: '#f43f5e' }} />
+              בקרוב — חיבור לחשבון הבנק
+            </h2>
+            <p className="text-xs text-muted-foreground leading-relaxed">
+              בקרוב תוכל לחבר את חשבון הבנק וכרטיסי האשראי — כל העסקאות יסתנכרנו אוטומטית כל בוקר, ללא הזנה ידנית.
+            </p>
+          </div>
+        )}
 
         {/* WhatsApp bot — admin only for now */}
         {isAdmin ? (

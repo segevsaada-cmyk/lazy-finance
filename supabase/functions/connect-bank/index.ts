@@ -191,15 +191,20 @@ Deno.serve(async (req) => {
   const cleanCreds: Record<string, string> = {};
   for (const f of required) cleanCreds[f] = creds[f];
 
-  // Approval gate: only approved users can connect a bank.
+  // Gate: until owner finishes validating his own bank flow, only admins can
+  // connect. Relax back to is_approved-only once stable.
   const { data: settings } = await admin
     .from("user_settings")
-    .select("is_approved")
+    .select("is_approved, role")
     .eq("user_id", userId)
     .maybeSingle();
   if (!settings?.is_approved) {
     await logEvent(userId, bankId, "connect_rejected_unapproved", null, ip, ua);
     return json({ error: "user not approved" }, 403);
+  }
+  if (settings.role !== "admin") {
+    await logEvent(userId, bankId, "connect_rejected_non_admin", null, ip, ua);
+    return json({ error: "החיבור לבנק עדיין בבדיקה — יהיה זמין בקרוב" }, 403);
   }
 
   let ciphertext: string;
