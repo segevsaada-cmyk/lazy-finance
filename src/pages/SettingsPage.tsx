@@ -1,11 +1,12 @@
 import { useState } from 'react';
-import { Settings, Save, Trash2, Download, LogOut, Phone, Building2, Users, Link2, Check, ArrowUpRight } from 'lucide-react';
+import { Settings, Save, Trash2, Download, LogOut, Phone, Building2, Users, Check, ArrowUpRight } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { Switch } from '@/components/ui/switch';
 import { BottomNav } from '@/components/budget/BottomNav';
+import { BankConnectionCard } from '@/components/budget/BankConnectionCard';
 import { useStorage } from '@/hooks/useStorage';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
@@ -135,22 +136,7 @@ export default function SettingsPage() {
           </Button>
         </div>
 
-        {/* Coming soon: bank connection */}
-        <div
-          className="rounded-2xl border p-5 space-y-3"
-          style={{ borderColor: 'rgba(244,63,94,0.2)', background: 'rgba(244,63,94,0.03)' }}
-        >
-          <div className="flex items-center gap-2">
-            <Link2 className="w-4 h-4" style={{ color: '#f43f5e' }} />
-            <h2 className="font-bold text-sm text-foreground">חיבור לחשבון הבנק</h2>
-            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full mr-auto" style={{ background: 'rgba(244,63,94,0.15)', color: '#f43f5e' }}>
-              בקרוב
-            </span>
-          </div>
-          <p className="text-xs text-muted-foreground leading-relaxed">
-            בקרוב תוכל לחבר את חשבון הבנק וכרטיס האשראי — כל העסקאות יסתנכרנו אוטומטית, ללא הזנה ידנית.
-          </p>
-        </div>
+        <BankConnectionCard />
 
         {/* WhatsApp bot — admin only for now */}
         {isAdmin ? (
@@ -175,11 +161,11 @@ export default function SettingsPage() {
           <div className={`${cardClass} space-y-2`}>
             <h2 className="font-bold text-sm text-foreground flex items-center gap-2">
               <Phone className="w-4 h-4 text-muted-foreground" />
-              בוט WhatsApp
-              <span className="text-[10px] font-normal px-1.5 py-0.5 rounded-full bg-secondary text-muted-foreground">בקרוב</span>
+              בקרוב — בוט גם בוואטסאפ
             </h2>
             <p className="text-xs text-muted-foreground leading-relaxed">
-              עוד לא זמין. בקרוב תוכל לרשום הוצאות והכנסות ישירות בוואטסאפ ולשאול את הבוט שאלות פיננסיות. עד אז ההזנה דרך הצ׳אט באפליקציה זהה ברוחה.
+              בקרוב תוכל לרשום תנועות ולשאול שאלות פיננסיות ישירות בהודעה בוואטסאפ.
+              עד אז ההזנה דרך הצ׳אט באפליקציה זהה לחלוטין.
             </p>
           </div>
         )}

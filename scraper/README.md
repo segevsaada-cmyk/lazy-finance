@@ -1,43 +1,35 @@
-# Lazy Finance — Bank Scraper
+# Lazy Finance — Multi-User Bank Scraper
 
-מושך עסקאות מאוצר החייל ומסנכרן ל-Supabase פעם ביום.
+קורא את כל החיבורים הפעילים מטבלת `public.bank_connections`, מפענח את הסיסמאות
+המוצפנות עם `BANK_CRED_KEY`, ומסנכרן עסקאות לכל משתמש דרך
+[israeli-bank-scrapers](https://github.com/eshaham/israeli-bank-scrapers).
 
-## פריסה ב-Railway (5 דקות)
+## פריסה ב-Railway
 
-### 1. צור חשבון ב-Railway
-https://railway.app → Sign up (חינמי עד $5/חודש)
-
-### 2. חבר GitHub
-- New Project → Deploy from GitHub repo → בחר `lazy-finance`
-- **Root Directory:** `scraper`
-
-### 3. הגדר Environment Variables
-ב-Railway → Variables:
-
+### 1. Environment Variables
 | שם | ערך |
 |---|---|
 | `SUPABASE_URL` | `https://jamltyybiemjpmbmvobt.supabase.co` |
-| `SUPABASE_SERVICE_ROLE_KEY` | (מה-.env שלך) |
-| `SUPABASE_USER_ID` | (ה-User ID שלך מ-Supabase Auth) |
-| `BANK_USERNAME` | תעודת זהות |
-| `BANK_PASSWORD` | סיסמת האינטרנט של אוצר החייל |
+| `SUPABASE_SERVICE_ROLE_KEY` | (מה-.env המקומי שלך) |
+| `BANK_CRED_KEY` | אותו base64 שנשמר ב-Supabase function secrets — חייב להיות זהה |
 | `BANK_DAYS_BACK` | `30` |
 
-### 4. הגדר Cron
+> ⚠️ אם `BANK_CRED_KEY` שונה מזה שב-edge function, הפענוח ייכשל לכל המשתמשים.
+
+### 2. Cron
 Railway → Settings → Cron Schedule:
 ```
-0 7 * * *
+0 4 * * *
 ```
-(כל יום ב-07:00 בוקר)
+(כל יום ב-07:00 שעון ישראל = 04:00 UTC)
 
-### 5. מצא את ה-User ID שלך
-כנס ל: https://jamltyybiemjpmbmvobt.supabase.co/auth/users
-ותמצא את ה-ID שלך ליד האימייל.
+### 3. הוספת חיבורים
+משתמשים מחברים את הבנק שלהם דרך הממשק (`/settings`) — ה-edge function
+`connect-bank` מצפינה את הסיסמה ושומרת. אין צורך לערוך משתני סביבה לכל משתמש.
 
 ## הרצה ידנית לטסט
 ```bash
+cd scraper
 npm install
-SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... SUPABASE_USER_ID=... \
-BANK_USERNAME=123456789 BANK_PASSWORD=mypass \
-node index.mjs
+node --env-file=.env index.mjs
 ```

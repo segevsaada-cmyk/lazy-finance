@@ -192,13 +192,24 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: CORS });
 
   try {
-    // Get all linked WhatsApp users
+    // Restricted to admins only — bot runs from owner's personal phone, so we
+    // do not send tips to non-admin accounts even if they appear in
+    // whatsapp_users. Lift this gate once the bot moves to a dedicated number.
+    const { data: admins, error: adminErr } = await supabase
+      .from("user_settings")
+      .select("user_id")
+      .eq("role", "admin");
+    if (adminErr) return json({ error: adminErr.message }, 500);
+    const adminIds = (admins ?? []).map((a) => a.user_id);
+    if (adminIds.length === 0) return json({ ok: true, sent: 0, reason: "no admins" });
+
     const { data: waUsers, error } = await supabase
       .from("whatsapp_users")
-      .select("user_id, phone_number");
+      .select("user_id, phone_number")
+      .in("user_id", adminIds);
 
     if (error) return json({ error: error.message }, 500);
-    if (!waUsers?.length) return json({ ok: true, sent: 0, reason: "no linked users" });
+    if (!waUsers?.length) return json({ ok: true, sent: 0, reason: "no linked admin users" });
 
     const tipIndex = dayOfYear() % TIPS.length;
     const buildTip = TIPS[tipIndex];
