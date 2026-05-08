@@ -6,16 +6,24 @@
  * POST /api/login-by-phone
  * Body: { phone: "0524844685" | "972524844685" | "+972 52-484-4685" }
  * Reply: 200 { email } | 404 { error }
+ *
+ * Pre-auth endpoint (the user is trying to log in). Defended by:
+ *   - method gate
+ *   - body-size cap
+ *   - phone-shape validation
+ *   - per-IP and per-phone rate limit (anti-enumeration / brute-force)
  */
 
+import {
+  requireMethod, rejectIfTooLarge, enforceRateLimit, clientIp,
+} from './_lib/security.js';
+
 export default async function handler(req, res) {
-  if (req.method !== 'POST') {
-    res.setHeader('Allow', 'POST');
-    return res.status(405).json({ error: 'method not allowed' });
-  }
+  if (!requireMethod(req, res, 'POST')) return;
+  if (!rejectIfTooLarge(req, res, 1024)) return;
 
   const { phone } = req.body || {};
-  if (!phone || typeof phone !== 'string') {
+  if (!phone || typeof phone !== 'string' || phone.length > 32) {
     return res.status(400).json({ error: 'phone required' });
   }
 
@@ -23,6 +31,12 @@ export default async function handler(req, res) {
   if (last9.length < 9) {
     return res.status(400).json({ error: 'phone too short' });
   }
+
+  // Per-IP: 10 attempts/min — generous for a real user, hard for a botnet.
+  if (!(await enforceRateLimit(req, res, `login:${clientIp(req)}`, 10, 60))) return;
+  // Per-phone: 5 attempts/min — protects a specific user from being hammered
+  // and from credential stuffing.
+  if (!(await enforceRateLimit(req, res, `login-phone:${last9}`, 5, 60))) return;
 
   const SUPABASE_URL = process.env.SUPABASE_URL;
   const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;

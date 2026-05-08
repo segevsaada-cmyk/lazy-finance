@@ -191,6 +191,15 @@ async function getMonthlyBudget(userId: string) {
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: CORS });
 
+  // Authorization gate: this function is only callable by pg_cron with the
+  // service-role key in the Authorization header. Anything else is rejected
+  // so a leaked function URL cannot be used to spam WhatsApp.
+  const authHeader = req.headers.get("Authorization") ?? "";
+  const expected = `Bearer ${SUPABASE_SERVICE_KEY}`;
+  if (authHeader !== expected) {
+    return json({ error: "unauthorized" }, 401);
+  }
+
   try {
     // Restricted to admins only — bot runs from owner's personal phone, so we
     // do not send tips to non-admin accounts even if they appear in

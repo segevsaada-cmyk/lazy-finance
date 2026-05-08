@@ -5,6 +5,7 @@ import { Input } from '@/components/ui/input';
 import { ALL_CATEGORIES, CATEGORY_ICON_MAP } from '@/constants/categories';
 import { todayStr, formatCurrency } from '@/lib/utils';
 import type { Transaction } from '@/types/budget';
+import { supabase } from '@/integrations/supabase/client';
 
 interface ChatTransactionSheetProps {
   open: boolean;
@@ -52,9 +53,14 @@ export function ChatTransactionSheet({
     setBusy(true);
 
     try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData.session?.access_token;
       const r = await fetch('/api/categorize', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
         body: JSON.stringify({ text }),
       });
       if (!r.ok) {

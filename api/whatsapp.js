@@ -1,7 +1,12 @@
 // Vercel Serverless Function — WhatsApp Webhook (Twilio)
 // POST /api/whatsapp
+//
+// Defended by Twilio's request signature (X-Twilio-Signature). Without this
+// check anyone could POST a forged "from this user, do this" payload and
+// have us write to that user's transactions table via service-role.
 
 import { createClient } from '@supabase/supabase-js';
+import { verifyTwilioSignature } from './_lib/security.js';
 
 const supabase = createClient(
   process.env.VITE_SUPABASE_URL,
@@ -75,6 +80,19 @@ function fmt(n) {
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
     return res.status(405).send('Method Not Allowed');
+  }
+
+  // Twilio signature verification. Skipped if TWILIO_AUTH_TOKEN not set
+  // (dev / dormant path); enforced strictly in prod.
+  if (process.env.TWILIO_AUTH_TOKEN) {
+    const proto = req.headers['x-forwarded-proto'] || 'https';
+    const host = req.headers['x-forwarded-host'] || req.headers.host;
+    const fullUrl = `${proto}://${host}${req.url}`;
+    if (!verifyTwilioSignature(req, fullUrl)) {
+      return res.status(403).send('forbidden');
+    }
+  } else if (process.env.NODE_ENV === 'production') {
+    return res.status(503).send('twilio not configured');
   }
 
   // Parse Twilio form body (application/x-www-form-urlencoded)

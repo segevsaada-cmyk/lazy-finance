@@ -8,62 +8,69 @@
  * Reply: 200 { type, amount, categoryId, note }
  *      | 200 { needsClarification: true, question }
  *      | 400 { error }
+ *
+ * Defenses: method gate, body-size cap, JWT auth, per-user rate limit.
  */
+import {
+  requireMethod, rejectIfTooLarge, requireUser, enforceRateLimit,
+} from './_lib/security.js';
+
+const MAX_TEXT = 1000;
 
 // Order matters — first match wins. Be specific before generic.
 const KEYWORD_MAP = [
   // Expense — housing
-  { rgx: /\b(שכירות|דירה לשכור|שכר דירה|שכר[ \-]?דירה)\b/i, id: 'rent' },
-  { rgx: /\b(ארנונה|חשמל|מים|גז|בזק|הוט|תאגיד מים|אינטרנט הביתי)\b/i, id: 'utilities' },
+  { rgx: /(?<![A-Za-z֐-׿])(שכירות|דירה לשכור|שכר דירה|שכר[ \-]?דירה)(?![A-Za-z֐-׿])/i, id: 'rent' },
+  { rgx: /(?<![A-Za-z֐-׿])(ארנונה|חשמל|מים|גז|בזק|הוט|תאגיד מים|אינטרנט הביתי)(?![A-Za-z֐-׿])/i, id: 'utilities' },
 
   // Expense — car / transport
-  { rgx: /\b(דלק|תחנת דלק|פז|דור אלון|סדש|סונול|טסט|רישוי רכב|ביטוח רכב|חניה|חנייה|רכבת|אוטובוס|מונית|רב[ \-]?קו|יוניקרדס|טסלה|כביש 6)\b/i, id: 'car' },
+  { rgx: /(?<![A-Za-z֐-׿])(דלק|תחנת דלק|פז|דור אלון|סדש|סונול|טסט|רישוי רכב|ביטוח רכב|חניה|חנייה|רכבת|אוטובוס|מונית|רב[ \-]?קו|יוניקרדס|טסלה|כביש 6)(?![A-Za-z֐-׿])/i, id: 'car' },
 
   // Expense — groceries
-  { rgx: /\b(סופר|מכולת|שופרסל|רמי לוי|מגה|טיב טעם|יוחננוף|ויקטורי|אושר עד|קניות לבית)\b/i, id: 'groceries' },
+  { rgx: /(?<![A-Za-z֐-׿])(סופר|מכולת|שופרסל|רמי לוי|מגה|טיב טעם|יוחננוף|ויקטורי|אושר עד|קניות לבית)(?![A-Za-z֐-׿])/i, id: 'groceries' },
 
   // Expense — food / restaurants
-  { rgx: /\b(מסעדה|מסעדות|קפה|בית קפה|פיצה|פיצות|המבורגר|בורגר|סושי|פלאפל|שווארמה|ארוחה|מסעדנים|10ביס|תן ביס|וולט|wolt|takeaway|טייק[ \-]?אוואי|משלוח אוכל)\b/i, id: 'food' },
+  { rgx: /(?<![A-Za-z֐-׿])(מסעדה|מסעדות|קפה|בית קפה|פיצה|פיצות|המבורגר|בורגר|סושי|פלאפל|שווארמה|ארוחה|מסעדנים|10ביס|תן ביס|וולט|wolt|takeaway|טייק[ \-]?אוואי|משלוח אוכל)(?![A-Za-z֐-׿])/i, id: 'food' },
 
   // Expense — entertainment
-  { rgx: /\b(נטפליקס|נטפליקס|netflix|disney|disney plus|דיסני|spotify|ספוטיפיי|youtube premium|סינמטק|סרט|הצגה|תיאטרון|מופע|פסטיבל|בידור)\b/i, id: 'entertainment' },
+  { rgx: /(?<![A-Za-z֐-׿])(נטפליקס|נטפליקס|netflix|disney|disney plus|דיסני|spotify|ספוטיפיי|youtube premium|סינמטק|סרט|הצגה|תיאטרון|מופע|פסטיבל|בידור)(?![A-Za-z֐-׿])/i, id: 'entertainment' },
 
   // Expense — health
-  { rgx: /\b(רופא|מרפאה|בריאות|תרופות|בית מרקחת|סופר[ \-]?פארם|super[ \-]?pharm|ניתוח|רנטגן|שיניים|דנטל|אופטומטריסט|פיזיותרפיה|פסיכולוג|טיפול)\b/i, id: 'health' },
+  { rgx: /(?<![A-Za-z֐-׿])(רופא|מרפאה|בריאות|תרופות|בית מרקחת|סופר[ \-]?פארם|super[ \-]?pharm|ניתוח|רנטגן|שיניים|דנטל|אופטומטריסט|פיזיותרפיה|פסיכולוג|טיפול)(?![A-Za-z֐-׿])/i, id: 'health' },
 
   // Expense — phone
-  { rgx: /\b(סלולר|פלאפון|פרטנר|הוט מובייל|גולן טלקום|012 mobile|חבילת סלולר|טעינה לטלפון)\b/i, id: 'phone' },
+  { rgx: /(?<![A-Za-z֐-׿])(סלולר|פלאפון|פרטנר|הוט מובייל|גולן טלקום|012 mobile|חבילת סלולר|טעינה לטלפון)(?![A-Za-z֐-׿])/i, id: 'phone' },
 
   // Expense — tech
-  { rgx: /\b(מחשב|לפטופ|laptop|מקבוק|macbook|אייפון|iphone|אנדרואיד|android|טלפון|אוזניות|airpods|מצלמה|גאדג'?ט|תוכנה|מנוי דיגיטלי|ssd|כרטיס מסך|gpu|cpu|מקלדת|עכבר|מסך)\b/i, id: 'tech' },
+  { rgx: /(?<![A-Za-z֐-׿])(מחשב|לפטופ|laptop|מקבוק|macbook|אייפון|iphone|אנדרואיד|android|טלפון|אוזניות|airpods|מצלמה|גאדג'?ט|תוכנה|מנוי דיגיטלי|ssd|כרטיס מסך|gpu|cpu|מקלדת|עכבר|מסך)(?![A-Za-z֐-׿])/i, id: 'tech' },
 
   // Expense — travel
-  { rgx: /\b(טיסה|טיסות|חו"ל|חו״ל|חופשה בחו|מלון|airbnb|booking|חבילת נופש|רכב שכור|תיירות|נסיעה לחו)\b/i, id: 'travel' },
+  { rgx: /(?<![A-Za-z֐-׿])(טיסה|טיסות|חו"ל|חו״ל|חופשה בחו|מלון|airbnb|booking|חבילת נופש|רכב שכור|תיירות|נסיעה לחו)(?![A-Za-z֐-׿])/i, id: 'travel' },
 
   // Expense — education
-  { rgx: /\b(קורס|קורסים|ספר|ספרים|לימודים|שכר[ \-]?לימוד|אוניברסיטה|מכללה|udemy|יודמי|coursera|מנוי לימודי|הרצאה|סמינר)\b/i, id: 'education' },
+  { rgx: /(?<![A-Za-z֐-׿])(קורס|קורסים|ספר|ספרים|לימודים|שכר[ \-]?לימוד|אוניברסיטה|מכללה|udemy|יודמי|coursera|מנוי לימודי|הרצאה|סמינר)(?![A-Za-z֐-׿])/i, id: 'education' },
 
   // Expense — clothing
-  { rgx: /\b(ביגוד|בגדים|חולצה|מכנסיים|נעליים|שמלה|חליפה|zara|זארה|h&m|fox|פוקס|castro|קסטרו|caphir|מעיל|ז'?קט)\b/i, id: 'clothing' },
+  { rgx: /(?<![A-Za-z֐-׿])(ביגוד|בגדים|חולצה|מכנסיים|נעליים|שמלה|חליפה|zara|זארה|h&m|fox|פוקס|castro|קסטרו|caphir|מעיל|ז'?קט)(?![A-Za-z֐-׿])/i, id: 'clothing' },
 
   // Expense — sport
-  { rgx: /\b(חדר כושר|מנוי כושר|gym|holmes place|הולמס פלייס|גולד'?ס|crossfit|קרוספיט|פילאטיס|יוגה|אופניים|ריצה|טריאתלון|ציוד ספורט)\b/i, id: 'sport' },
+  { rgx: /(?<![A-Za-z֐-׿])(חדר כושר|מנוי כושר|gym|holmes place|הולמס פלייס|גולד'?ס|crossfit|קרוספיט|פילאטיס|יוגה|אופניים|ריצה|טריאתלון|ציוד ספורט)(?![A-Za-z֐-׿])/i, id: 'sport' },
 
   // Expense — beauty
-  { rgx: /\b(מספרה|תספורת|טיפוח|איפור|מסקרה|שמפו|קוסמטיקה|מניקור|פדיקור|פייספ|לק|חינ?ה|spa|ספא|מסאז'?)\b/i, id: 'beauty' },
+  { rgx: /(?<![A-Za-z֐-׿])(מספרה|תספורת|טיפוח|איפור|מסקרה|שמפו|קוסמטיקה|מניקור|פדיקור|פייספ|לק|חינ?ה|spa|ספא|מסאז'?)(?![A-Za-z֐-׿])/i, id: 'beauty' },
 
   // Expense — gifts
-  { rgx: /\b(מתנה|מתנות|יום הולדת|חתונה|בר מצווה|בת מצווה|ברית|מתנה לחבר|מתנה ל)\b/i, id: 'gifts' },
+  { rgx: /(?<![A-Za-z֐-׿])(מתנה|מתנות|יום הולדת|חתונה|בר מצווה|בת מצווה|ברית|מתנה לחבר|מתנה ל)(?![A-Za-z֐-׿])/i, id: 'gifts' },
 
   // Income
-  { rgx: /\b(משכורת|שכר חודשי|שכר עבודה|תלוש|בונוס|13)\b/i, id: 'salary', type: 'income' },
-  { rgx: /\b(פרילנס|פרי[ \-]?לאנס|freelance|חשבונית|לקוח שילם|פרויקט)\b/i, id: 'freelance', type: 'income' },
-  { rgx: /\b(דיבידנד|ריבית|רווח השקעות|תיק השקעות|s&p|מניות|קרן נאמנות)\b/i, id: 'investments', type: 'income' },
-  { rgx: /\b(מתנה כספית|העברה במתנה|כסף במתנה|נתנו לי|מתנה מההורים)\b/i, id: 'gift_income', type: 'income' },
+  { rgx: /(?<![A-Za-z֐-׿])(משכורת|שכר חודשי|שכר עבודה|תלוש|בונוס|13)(?![A-Za-z֐-׿])/i, id: 'salary', type: 'income' },
+  { rgx: /(?<![A-Za-z֐-׿])(פרילנס|פרי[ \-]?לאנס|freelance|חשבונית|לקוח שילם|פרויקט)(?![A-Za-z֐-׿])/i, id: 'freelance', type: 'income' },
+  { rgx: /(?<![A-Za-z֐-׿])(דיבידנד|ריבית|רווח השקעות|תיק השקעות|s&p|מניות|קרן נאמנות)(?![A-Za-z֐-׿])/i, id: 'investments', type: 'income' },
+  { rgx: /(?<![A-Za-z֐-׿])(מתנה כספית|העברה במתנה|כסף במתנה|נתנו לי|מתנה מההורים)(?![A-Za-z֐-׿])/i, id: 'gift_income', type: 'income' },
 ];
 
-const INCOME_HINTS = /\b(קיבלתי|התקבל|התקבלו|הופקד|שולם לי|שילמו לי|הופקדו|הגיע ל[חיש][שב])\b/i;
-const EXPENSE_HINTS = /\b(שילמתי|קניתי|הוצאתי|חייבו אותי|חויב|חיוב)\b/i;
+const INCOME_HINTS = /(?<![A-Za-z֐-׿])(קיבלתי|התקבל|התקבלו|הופקד|שולם לי|שילמו לי|הופקדו|הגיע ל[חיש][שב])(?![A-Za-z֐-׿])/i;
+const EXPENSE_HINTS = /(?<![A-Za-z֐-׿])(שילמתי|קניתי|הוצאתי|חייבו אותי|חויב|חיוב)(?![A-Za-z֐-׿])/i;
 
 function extractAmount(text) {
   // Remove common Hebrew currency words to clean up
@@ -107,14 +114,20 @@ function categorize(text) {
 }
 
 export default async function handler(req, res) {
-  if (req.method !== 'POST') {
-    res.setHeader('Allow', 'POST');
-    return res.status(405).json({ error: 'method not allowed' });
-  }
+  if (!requireMethod(req, res, 'POST')) return;
+  if (!rejectIfTooLarge(req, res, 8 * 1024)) return;
+
+  const user = await requireUser(req, res);
+  if (!user) return;
+
+  if (!(await enforceRateLimit(req, res, `categorize:${user.id}`, 60, 60))) return;
 
   const { text } = req.body || {};
   if (!text || typeof text !== 'string' || !text.trim()) {
     return res.status(400).json({ error: 'text required' });
+  }
+  if (text.length > MAX_TEXT) {
+    return res.status(400).json({ error: 'text too long', max_chars: MAX_TEXT });
   }
 
   const result = categorize(text.trim());

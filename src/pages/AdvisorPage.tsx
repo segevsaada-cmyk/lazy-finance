@@ -1,9 +1,11 @@
 import { useState, useRef, useEffect } from 'react';
-import { Send, Sparkles, AlertCircle, Bot } from 'lucide-react';
+import { Send, Sparkles, AlertCircle, Bot, Info } from 'lucide-react';
 import { BottomNav } from '@/components/budget/BottomNav';
 import { useStorage } from '@/hooks/useStorage';
 import { useBudget } from '@/hooks/useBudget';
 import { formatCurrency } from '@/lib/utils';
+import { ADVISOR_DISCLAIMER } from '@/constants/legal';
+import { supabase } from '@/integrations/supabase/client';
 
 interface Message {
   role: 'user' | 'assistant';
@@ -61,9 +63,14 @@ export default function AdvisorPage() {
     setApiError(null);
 
     try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData.session?.access_token;
       const res = await fetch('/api/advisor', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
         body: JSON.stringify({
           messages: newMessages.map(m => ({ role: m.role, content: m.content })),
           context: financialContext,
@@ -120,6 +127,16 @@ export default function AdvisorPage() {
       {/* Messages */}
       <div className="flex-1 overflow-y-auto px-4 py-4">
         <div className="max-w-lg mx-auto space-y-4">
+
+          <div
+            className="rounded-xl border p-3 flex items-start gap-2"
+            style={{ borderColor: 'rgba(148,163,184,0.2)', background: 'rgba(148,163,184,0.05)' }}
+          >
+            <Info className="w-3.5 h-3.5 mt-0.5 flex-shrink-0 text-muted-foreground" />
+            <p className="text-[11px] text-muted-foreground leading-relaxed">
+              {ADVISOR_DISCLAIMER}
+            </p>
+          </div>
 
           {/* API key missing error */}
           {apiError === 'missing_key' && (
