@@ -93,6 +93,34 @@
   }
 }
 
+@layer components {
+  /* Brand logo — light theme: subtle drop shadow for depth.
+     Dark theme: a soft white halo follows the logo silhouette so the
+     dark navy strokes stay readable on dark backgrounds without a
+     hard rectangular plate. The multi-stop shadow softens edges,
+     simulating an inner-glow/aura.
+   */
+  .brand-logo {
+    filter: drop-shadow(0 4px 12px rgba(15, 23, 42, 0.12));
+    transition: filter 0.3s ease;
+  }
+  .dark .brand-logo {
+    filter:
+      drop-shadow(0 0 8px rgba(255, 255, 255, 0.55))
+      drop-shadow(0 0 18px rgba(255, 255, 255, 0.35))
+      drop-shadow(0 0 32px rgba(244, 250, 255, 0.18));
+  }
+  .brand-icon {
+    filter: drop-shadow(0 2px 6px rgba(15, 23, 42, 0.15));
+    transition: filter 0.3s ease;
+  }
+  .dark .brand-icon {
+    filter:
+      drop-shadow(0 0 6px rgba(255, 255, 255, 0.6))
+      drop-shadow(0 0 14px rgba(255, 255, 255, 0.35));
+  }
+}
+
 @layer utilities {
   .balance-ok {
     color: #22c55e;

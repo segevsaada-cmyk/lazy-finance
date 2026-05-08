@@ -141,15 +141,7 @@ export default function AuthPage() {
           <img
             src="/lazy-finance-logo.png"
             alt="Lazy Finance — כסף עובד. אתה לא."
-            className="block dark:hidden w-full max-w-[220px] h-auto mx-auto select-none"
-            style={{ filter: 'drop-shadow(0 4px 12px rgba(0,0,0,0.12))' }}
-            draggable={false}
-          />
-          <img
-            src="/lazy-finance-logo-dark.png"
-            alt="Lazy Finance — כסף עובד. אתה לא."
-            className="hidden dark:block w-full max-w-[220px] h-auto mx-auto select-none"
-            style={{ filter: 'drop-shadow(0 6px 18px rgba(0,0,0,0.55))' }}
+            className="brand-logo block w-full max-w-[220px] h-auto mx-auto select-none"
             draggable={false}
           />
           <div className="mt-3 flex items-center justify-center gap-2 text-[11px] text-muted-foreground/80 font-medium tracking-wide flex-wrap">

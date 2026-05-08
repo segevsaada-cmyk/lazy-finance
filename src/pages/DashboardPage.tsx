@@ -64,13 +64,7 @@ export default function DashboardPage() {
           <img
             src="/lazy-finance-icon.png"
             alt="Lazy Finance"
-            className="block dark:hidden w-12 h-12 select-none"
-            draggable={false}
-          />
-          <img
-            src="/lazy-finance-icon-dark.png"
-            alt="Lazy Finance"
-            className="hidden dark:block w-12 h-12 select-none"
+            className="brand-icon w-12 h-12 select-none"
             draggable={false}
           />
           <h1 className="text-xl font-black tracking-tight text-foreground mt-1">
