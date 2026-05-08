@@ -5,17 +5,27 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
+import { CURRENT_TERMS_VERSION } from '@/constants/legal';
+
+function phoneDigitsOnly(s: string): string {
+  return s.replace(/\D/g, '');
+}
+
+function syntheticEmailFromPhone(phone: string): string {
+  return `phone-${phoneDigitsOnly(phone).slice(-9)}@auth.lazyfinance.app`;
+}
 
 export default function AuthPage() {
   const navigate = useNavigate();
   const [isLogin, setIsLogin] = useState(true);
-  const [loginBy, setLoginBy] = useState<'email' | 'phone'>('email');
   const [loading, setLoading] = useState(false);
   const [mounted, setMounted] = useState(false);
-  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
+  const [acceptedTerms, setAcceptedTerms] = useState(false);
+
+  const TERMS_VERSION = CURRENT_TERMS_VERSION;
 
   useEffect(() => {
     setMounted(true);
@@ -33,27 +43,21 @@ export default function AuthPage() {
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!password) return;
-    if (loginBy === 'email' && !email) return;
-    if (loginBy === 'phone' && !phone) return;
+    if (!phone || !password) return;
     setLoading(true);
 
-    let loginEmail = email;
-    if (loginBy === 'phone') {
-      const r = await fetch('/api/login-by-phone', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phone }),
-      });
-      if (!r.ok) {
-        const j = await r.json().catch(() => ({}));
-        toast.error(j.error || 'מספר לא נמצא במערכת');
-        setLoading(false);
-        return;
-      }
-      const j = await r.json();
-      loginEmail = j.email;
+    const r = await fetch('/api/login-by-phone', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ phone }),
+    });
+    if (!r.ok) {
+      const j = await r.json().catch(() => ({}));
+      toast.error(j.error || 'מספר לא נמצא במערכת');
+      setLoading(false);
+      return;
     }
+    const { email: loginEmail } = await r.json();
 
     const { data, error } = await supabase.auth.signInWithPassword({ email: loginEmail, password });
     if (error) {
@@ -73,26 +77,34 @@ export default function AuthPage() {
   const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim()) { toast.error('יש להזין שם מלא'); return; }
-    if (!email || password.length < 6) { toast.error('סיסמה חייבת להיות לפחות 6 תווים'); return; }
+    if (phoneDigitsOnly(phone).length < 9) { toast.error('יש להזין מספר נייד תקין'); return; }
+    if (password.length < 6) { toast.error('סיסמה חייבת להיות לפחות 6 תווים'); return; }
+    if (!acceptedTerms) { toast.error('יש לאשר את התקנון, מדיניות הפרטיות והצהרת הנגישות'); return; }
     setLoading(true);
 
-    const { data, error } = await supabase.auth.signUp({ email, password });
+    const syntheticEmail = syntheticEmailFromPhone(phone);
+    const { data, error } = await supabase.auth.signUp({ email: syntheticEmail, password });
     if (error) {
-      toast.error(error.message.includes('already registered') ? 'האימייל כבר רשום — נסה להתחבר' : error.message);
+      toast.error(error.message.includes('already registered') ? 'הנייד הזה כבר רשום — נסה להתחבר' : error.message);
       setLoading(false);
       return;
     }
 
     if (data.user) {
+      const trialEnds = new Date(Date.now() + 14 * 86400000).toISOString();
       const { error: settingsError } = await supabase.from('user_settings').insert({
         user_id: data.user.id,
         expected_monthly_income: 0,
         warning_threshold: 1000,
         is_osek_murshe: false,
         full_name: name.trim(),
-        phone: phone.trim() || null,
+        phone: phone.trim(),
         is_approved: false,
         role: 'user',
+        terms_accepted_at: new Date().toISOString(),
+        terms_version: TERMS_VERSION,
+        subscription_status: 'trial',
+        trial_ends_at: trialEnds,
       });
       if (settingsError) {
         toast.error(`נרשמת אבל יצירת הפרופיל נכשלה: ${settingsError.message}. פנה למנהל המערכת.`);
@@ -125,14 +137,28 @@ export default function AuthPage() {
         }}
       >
         {/* Header */}
-        <div className="px-6 pt-8 pb-5 text-center border-b border-border/50">
-          <h1 className="text-3xl font-black tracking-tight">
-            <span style={{ color: '#f43f5e' }}>Lazy</span>{' '}
-            <span className="text-foreground">Finance</span>
-          </h1>
-          <p className="text-xs text-muted-foreground/70 mt-1.5 tracking-wide">
-            התנהלות פיננסית פשוטה לעצלנים
-          </p>
+        <div className="px-6 pt-6 pb-5 text-center border-b border-border/50">
+          <img
+            src="/lazy-finance-logo.png"
+            alt="Lazy Finance — כסף עובד. אתה לא."
+            className="block dark:hidden w-full max-w-[220px] h-auto mx-auto select-none"
+            style={{ filter: 'drop-shadow(0 4px 12px rgba(0,0,0,0.12))' }}
+            draggable={false}
+          />
+          <img
+            src="/lazy-finance-logo-dark.png"
+            alt="Lazy Finance — כסף עובד. אתה לא."
+            className="hidden dark:block w-full max-w-[220px] h-auto mx-auto select-none"
+            style={{ filter: 'drop-shadow(0 6px 18px rgba(0,0,0,0.55))' }}
+            draggable={false}
+          />
+          <div className="mt-3 flex items-center justify-center gap-2 text-[11px] text-muted-foreground/80 font-medium tracking-wide flex-wrap">
+            <span>ניהול פיננסי חכם</span>
+            <span className="text-muted-foreground/40">·</span>
+            <span>השקעות אוטומטיות</span>
+            <span className="text-muted-foreground/40">·</span>
+            <span>בלי כאב ראש</span>
+          </div>
         </div>
 
         <div className="px-6 py-5">
@@ -155,61 +181,15 @@ export default function AuthPage() {
           </div>
 
           <form onSubmit={isLogin ? handleLogin : handleSignup} className="space-y-3.5">
-            {/* Signup-only fields */}
+            {/* Signup-only: full name */}
             {!isLogin && (
-              <>
-                <div className="space-y-1.5">
-                  <Label className="text-xs font-medium text-muted-foreground">שם מלא</Label>
-                  <Input
-                    type="text"
-                    placeholder="ישראל ישראלי"
-                    value={name}
-                    onChange={e => setName(e.target.value)}
-                    required
-                    disabled={loading}
-                    className={ic}
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <Label className="text-xs font-medium text-muted-foreground">טלפון (אופציונלי)</Label>
-                  <Input
-                    type="tel"
-                    placeholder="050-0000000"
-                    value={phone}
-                    onChange={e => setPhone(e.target.value)}
-                    disabled={loading}
-                    className={ic}
-                  />
-                </div>
-              </>
-            )}
-
-            {/* Login: choose email vs phone */}
-            {isLogin && (
-              <div className="flex bg-secondary/60 rounded-lg p-0.5 gap-0.5">
-                {[{ id: 'email' as const, label: 'מייל' }, { id: 'phone' as const, label: 'נייד' }].map(t => (
-                  <button
-                    key={t.id}
-                    type="button"
-                    onClick={() => setLoginBy(t.id)}
-                    className={`flex-1 py-1.5 text-xs font-semibold rounded-md transition-all duration-150 ${
-                      loginBy === t.id ? 'bg-card text-foreground' : 'text-muted-foreground'
-                    }`}
-                  >
-                    {t.label}
-                  </button>
-                ))}
-              </div>
-            )}
-
-            {(!isLogin || loginBy === 'email') && (
               <div className="space-y-1.5">
-                <Label className="text-xs font-medium text-muted-foreground">אימייל</Label>
+                <Label className="text-xs font-medium text-muted-foreground">שם מלא</Label>
                 <Input
-                  type="email"
-                  placeholder="your@email.com"
-                  value={email}
-                  onChange={e => setEmail(e.target.value)}
+                  type="text"
+                  placeholder="ישראל ישראלי"
+                  value={name}
+                  onChange={e => setName(e.target.value)}
                   required
                   disabled={loading}
                   className={ic}
@@ -217,20 +197,20 @@ export default function AuthPage() {
               </div>
             )}
 
-            {isLogin && loginBy === 'phone' && (
-              <div className="space-y-1.5">
-                <Label className="text-xs font-medium text-muted-foreground">נייד</Label>
-                <Input
-                  type="tel"
-                  placeholder="050-0000000"
-                  value={phone}
-                  onChange={e => setPhone(e.target.value)}
-                  required
-                  disabled={loading}
-                  className={ic}
-                />
-              </div>
-            )}
+            <div className="space-y-1.5">
+              <Label className="text-xs font-medium text-muted-foreground">נייד</Label>
+              <Input
+                type="tel"
+                inputMode="tel"
+                autoComplete="tel"
+                placeholder="050-0000000"
+                value={phone}
+                onChange={e => setPhone(e.target.value)}
+                required
+                disabled={loading}
+                className={ic}
+              />
+            </div>
             <div className="space-y-1.5">
               <Label className="text-xs font-medium text-muted-foreground">סיסמה</Label>
               <Input
@@ -244,10 +224,33 @@ export default function AuthPage() {
               />
             </div>
 
+            {!isLogin && (
+              <label className="flex items-start gap-2 pt-1 cursor-pointer group">
+                <input
+                  type="checkbox"
+                  checked={acceptedTerms}
+                  onChange={e => setAcceptedTerms(e.target.checked)}
+                  disabled={loading}
+                  required
+                  className="mt-0.5 w-4 h-4 accent-rose-500 cursor-pointer flex-shrink-0"
+                  aria-describedby="terms-label"
+                />
+                <span id="terms-label" className="text-[11px] text-muted-foreground/80 leading-relaxed select-none">
+                  קראתי ואני מאשר/ת את ה
+                  <a href="/terms" target="_blank" rel="noopener noreferrer" className="underline hover:text-foreground" style={{ color: '#f43f5e' }}>תקנון</a>
+                  , את ה
+                  <a href="/privacy" target="_blank" rel="noopener noreferrer" className="underline hover:text-foreground" style={{ color: '#f43f5e' }}>מדיניות הפרטיות</a>
+                  {' '}ואת ה
+                  <a href="/accessibility" target="_blank" rel="noopener noreferrer" className="underline hover:text-foreground" style={{ color: '#f43f5e' }}>הצהרת הנגישות</a>
+                  .
+                </span>
+              </label>
+            )}
+
             <button
               type="submit"
-              disabled={loading}
-              className="w-full py-3 mt-1 rounded-xl font-bold text-white transition-all active:scale-[0.98] disabled:opacity-40"
+              disabled={loading || (!isLogin && !acceptedTerms)}
+              className="w-full py-3 mt-1 rounded-xl font-bold text-white transition-all active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed"
               style={{
                 background: 'linear-gradient(135deg, #be123c, #f43f5e)',
                 boxShadow: '0 2px 12px rgba(244,63,94,0.35)',
@@ -260,7 +263,7 @@ export default function AuthPage() {
 
             {!isLogin && (
               <p className="text-center text-[11px] text-muted-foreground/60 leading-relaxed">
-                ההרשמה כפופה ל<a href="/terms" className="underline hover:text-foreground">תקנון</a> ול<a href="/privacy" className="underline hover:text-foreground">מדיניות הפרטיות</a>. תיבחן על ידי האדמין ותאושר בהקדם.
+                לאחר השליחה — תיבחן על ידי האדמין ותאושר בהקדם.
               </p>
             )}
           </form>

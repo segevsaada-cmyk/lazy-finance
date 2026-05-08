@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { Plus, RefreshCw } from 'lucide-react';
+import { Plus, RefreshCw, Moon, Sun } from 'lucide-react';
+import { useTheme } from '@/hooks/useTheme';
 import { Separator } from '@/components/ui/separator';
 import { BalanceCard } from '@/components/budget/BalanceCard';
 import { SummaryStrip } from '@/components/budget/SummaryStrip';
@@ -22,6 +23,7 @@ export default function DashboardPage() {
   const [chatOpen, setChatOpen] = useState(true ? false : false); // default closed
   // The + button opens chat by default; users can switch to the full form from inside.
 
+  const { theme, toggle: toggleTheme } = useTheme();
   const { transactions, settings, addTransaction, deleteTransaction, confirmRecurring } = useStorage();
   const { totalIncome, totalExpenses, balance, balanceStatus, monthTransactions, pendingRecurring, spentPercent } =
     useBudget({ transactions, settings, year, month });
@@ -51,12 +53,31 @@ export default function DashboardPage() {
 
       <div className="max-w-lg mx-auto px-4 pt-5 space-y-4 relative">
         {/* App header */}
-        <div className="text-center pb-1">
-          <h1 className="text-2xl font-black tracking-tight text-foreground">
-            <span style={{ color: '#f43f5e' }}>Lazy</span>{' '}
-            <span className="text-foreground">Finance</span>
+        <div className="flex flex-col items-center pb-1 relative">
+          <button
+            onClick={toggleTheme}
+            aria-label={theme === 'dark' ? 'מעבר למצב בהיר' : 'מעבר למצב כהה'}
+            className="absolute top-0 right-0 w-9 h-9 rounded-full bg-card border border-border flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors active:scale-95"
+          >
+            {theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+          </button>
+          <img
+            src="/lazy-finance-icon.png"
+            alt="Lazy Finance"
+            className="block dark:hidden w-12 h-12 select-none"
+            draggable={false}
+          />
+          <img
+            src="/lazy-finance-icon-dark.png"
+            alt="Lazy Finance"
+            className="hidden dark:block w-12 h-12 select-none"
+            draggable={false}
+          />
+          <h1 className="text-xl font-black tracking-tight text-foreground mt-1">
+            <span className="text-foreground">Lazy</span>
+            <span style={{ color: '#22d3a8' }}>Finance</span>
           </h1>
-          <p className="text-xs text-muted-foreground mt-0.5">התנהלות פיננסית פשוטה לעצלנים</p>
+          <p className="text-[11px] text-muted-foreground mt-0.5">כסף עובד. אתה לא.</p>
         </div>
 
         {/* Month navigation */}
