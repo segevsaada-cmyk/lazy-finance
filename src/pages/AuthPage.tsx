@@ -140,14 +140,17 @@ export default function AuthPage() {
         <div className="px-6 pt-6 pb-5 text-center border-b border-border/50">
           <img
             src="/lazy-finance-logo.png"
-            alt="Lazy Finance — כסף עובד. אתה לא."
+            alt="Lazy Finance"
             className="brand-logo block w-full max-w-[220px] h-auto mx-auto select-none"
             draggable={false}
           />
-          <div className="mt-3 flex items-center justify-center gap-2 text-[11px] text-muted-foreground/80 font-medium tracking-wide flex-wrap">
+          <p className="mt-3 text-sm font-bold tracking-tight text-foreground/90">
+            כסף עובד. אתה לא.
+          </p>
+          <div className="mt-2 flex items-center justify-center gap-2 text-[11px] text-muted-foreground/80 font-medium tracking-wide flex-wrap">
             <span>ניהול פיננסי חכם</span>
             <span className="text-muted-foreground/40">·</span>
-            <span>השקעות אוטומטיות</span>
+            <span>תובנות חכמות</span>
             <span className="text-muted-foreground/40">·</span>
             <span>בלי כאב ראש</span>
           </div>
