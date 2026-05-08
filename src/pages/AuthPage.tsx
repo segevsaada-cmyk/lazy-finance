@@ -154,6 +154,14 @@ export default function AuthPage() {
             <span className="text-muted-foreground/40">·</span>
             <span>בלי כאב ראש</span>
           </div>
+          {/* Trust signals — small icons that quietly answer "is this safe?" */}
+          <div className="mt-4 flex items-center justify-center gap-3 text-[10px] text-muted-foreground/70">
+            <span className="flex items-center gap-1">🔒 הצפנה</span>
+            <span className="text-muted-foreground/30">·</span>
+            <span className="flex items-center gap-1">🇮🇱 ישראל</span>
+            <span className="text-muted-foreground/30">·</span>
+            <span className="flex items-center gap-1">👤 רק אתה רואה</span>
+          </div>
         </div>
 
         <div className="px-6 py-5">
