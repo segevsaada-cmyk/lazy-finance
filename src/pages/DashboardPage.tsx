@@ -20,8 +20,7 @@ export default function DashboardPage() {
   const [year, setYear] = useState(today.getFullYear());
   const [month, setMonth] = useState(today.getMonth() + 1);
   const [sheetOpen, setSheetOpen] = useState(false);
-  const [chatOpen, setChatOpen] = useState(true ? false : false); // default closed
-  // The + button opens chat by default; users can switch to the full form from inside.
+  const [chatOpen, setChatOpen] = useState(false);
 
   const { theme, toggle: toggleTheme } = useTheme();
   const { transactions, settings, addTransaction, deleteTransaction, confirmRecurring } = useStorage();

@@ -1,10 +1,11 @@
 import { useState } from 'react';
-import { Settings, Save, Trash2, Download, LogOut, Phone, Building2, Users, Check, ArrowUpRight, Link2 } from 'lucide-react';
+import { Settings, Save, Trash2, Download, LogOut, Phone, Building2, Users, Check, ArrowUpRight, Link2, AlertTriangle, Loader2 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { Switch } from '@/components/ui/switch';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { BottomNav } from '@/components/budget/BottomNav';
 import { BankConnectionCard } from '@/components/budget/BankConnectionCard';
 import { useStorage } from '@/hooks/useStorage';
@@ -22,6 +23,10 @@ export default function SettingsPage() {
   const [threshold, setThreshold] = useState(settings.warningThreshold.toString());
   const [whatsapp, setWhatsapp] = useState('');
   const [saved, setSaved] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleteConfirm, setDeleteConfirm] = useState('');
+  const [deleting, setDeleting] = useState(false);
 
   const handleSave = async () => {
     await updateSettings({
@@ -32,22 +37,64 @@ export default function SettingsPage() {
     setTimeout(() => setSaved(false), 2000);
   };
 
-  const handleExport = () => {
-    const blob = new Blob([JSON.stringify({ transactions, settings }, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `lazy-finance-${new Date().toISOString().slice(0, 10)}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
+  // Full server-side export: hits /api/export-my-data which returns
+  // every per-user row from Supabase (not just the cached client state).
+  const handleExport = async () => {
+    if (exporting) return;
+    setExporting(true);
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData.session?.access_token;
+      const r = await fetch('/api/export-my-data', {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (!r.ok) {
+        toast.error('הייצוא נכשל. נסה שוב.');
+        return;
+      }
+      const blob = await r.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `lazy-finance-export-${new Date().toISOString().slice(0, 10)}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      toast.success('הקובץ ירד');
+    } catch (e) {
+      toast.error('הייצוא נכשל');
+    } finally {
+      setExporting(false);
+    }
   };
 
-  const handleClearAll = async () => {
-    if (!confirm('בטוח? פעולה זו לא ניתנת לביטול.')) return;
-    if (!user) return;
-    await supabase.from('transactions').delete().eq('user_id', user.id);
-    await supabase.from('user_settings').delete().eq('user_id', user.id);
-    window.location.reload();
+  const handleDeleteAccount = async () => {
+    if (deleting) return;
+    setDeleting(true);
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData.session?.access_token;
+      const r = await fetch('/api/delete-my-account', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ confirm: 'DELETE' }),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        toast.error(j.message || 'מחיקה נכשלה');
+        return;
+      }
+      toast.success('החשבון נמחק. להתראות 👋');
+      setDeleteOpen(false);
+      await supabase.auth.signOut();
+      navigate('/auth');
+    } catch (e) {
+      toast.error('מחיקה נכשלה');
+    } finally {
+      setDeleting(false);
+    }
   };
 
   const handleLinkWhatsapp = async () => {
@@ -210,13 +257,21 @@ export default function SettingsPage() {
         {/* Account actions */}
         <div className={`${cardClass} space-y-2`}>
           <h2 className="font-bold text-sm text-foreground mb-3">חשבון</h2>
-          <Button variant="outline" className="w-full" onClick={handleExport}>
-            <Download className="w-4 h-4" />
-            ייצא גיבוי (JSON)
+          <Button variant="outline" className="w-full" onClick={handleExport} disabled={exporting}>
+            {exporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+            {exporting ? 'מייצא…' : 'ייצא את כל הנתונים שלי (JSON)'}
           </Button>
-          <Button variant="outline" className="w-full text-destructive border-destructive/30 hover:bg-destructive/10" onClick={handleClearAll}>
+          <p className="text-[11px] text-muted-foreground/70 px-1 leading-relaxed">
+            כל הנתונים שלך — תנועות, מטרות, חיבורי בנק, היסטוריה — בקובץ אחד. בהתאם לחוק הגנת הפרטיות.
+          </p>
+          <Separator />
+          <Button
+            variant="outline"
+            className="w-full text-destructive border-destructive/30 hover:bg-destructive/10"
+            onClick={() => { setDeleteConfirm(''); setDeleteOpen(true); }}
+          >
             <Trash2 className="w-4 h-4" />
-            מחק את כל הנתונים
+            מחק את החשבון לצמיתות
           </Button>
           <Separator />
           <Button variant="outline" className="w-full" onClick={signOut}>
@@ -227,6 +282,55 @@ export default function SettingsPage() {
 
         <p className="text-center text-[11px] text-muted-foreground/30 pb-4 font-mono">LAZY FINANCE v1.0</p>
       </div>
+
+      {/* Account-deletion confirmation dialog */}
+      <Dialog open={deleteOpen} onOpenChange={(o) => { if (!deleting) setDeleteOpen(o); }}>
+        <DialogContent dir="rtl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <AlertTriangle className="w-5 h-5 text-destructive" />
+              מחיקת חשבון לצמיתות
+            </DialogTitle>
+          </DialogHeader>
+          <div className="text-sm leading-relaxed space-y-2 text-right text-muted-foreground">
+            <p>פעולה זו אינה ניתנת לביטול. תימחק כל המידע שלך:</p>
+            <p className="text-foreground/80 text-xs leading-relaxed">
+              • כל התנועות וההוצאות הקבועות<br />
+              • המטרות הפיננסיות<br />
+              • חיבורי הבנק (כולל מפתחות מוצפנים)<br />
+              • הקישור לוואטסאפ<br />
+              • הפרופיל וחשבון ההתחברות
+            </p>
+            <p className="pt-2 text-foreground">להמשך, הקלד <b>מחק</b> בתיבה למטה:</p>
+          </div>
+          <Input
+            type="text"
+            value={deleteConfirm}
+            onChange={(e) => setDeleteConfirm(e.target.value)}
+            placeholder="מחק"
+            className="text-right font-bold"
+            autoFocus
+          />
+          <div className="flex gap-2 justify-end">
+            <Button
+              variant="outline"
+              onClick={() => setDeleteOpen(false)}
+              disabled={deleting}
+            >
+              ביטול
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleDeleteAccount}
+              disabled={deleteConfirm.trim() !== 'מחק' || deleting}
+            >
+              {deleting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+              מחק לצמיתות
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       <BottomNav />
     </div>
   );
