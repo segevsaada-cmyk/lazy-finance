@@ -11,11 +11,26 @@ const WA_API_KEY = Deno.env.get("WA_API_KEY")!;
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
 
+// This function is only called server-to-server by pg_cron — no browser
+// ever hits it. We send "null" instead of "*" so any errant cross-origin
+// page can't even preflight us (defense-in-depth on top of the auth gate).
 const CORS = {
-  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Origin": "null",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
+
+// Constant-time string compare via SHA-256 hash equality. Avoids the
+// theoretical timing oracle of native `!==` on long auth tokens.
+async function timingSafeStringEqual(a: string, b: string): Promise<boolean> {
+  if (a.length !== b.length) return false;
+  const enc = new TextEncoder();
+  const ha = new Uint8Array(await crypto.subtle.digest("SHA-256", enc.encode(a)));
+  const hb = new Uint8Array(await crypto.subtle.digest("SHA-256", enc.encode(b)));
+  let diff = 0;
+  for (let i = 0; i < ha.length; i++) diff |= ha[i] ^ hb[i];
+  return diff === 0;
+}
 
 function json(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -193,10 +208,11 @@ Deno.serve(async (req) => {
 
   // Authorization gate: this function is only callable by pg_cron with the
   // service-role key in the Authorization header. Anything else is rejected
-  // so a leaked function URL cannot be used to spam WhatsApp.
+  // so a leaked function URL cannot be used to spam WhatsApp. Comparison
+  // is constant-time to remove a theoretical timing oracle on the token.
   const authHeader = req.headers.get("Authorization") ?? "";
   const expected = `Bearer ${SUPABASE_SERVICE_KEY}`;
-  if (authHeader !== expected) {
+  if (!(await timingSafeStringEqual(authHeader, expected))) {
     return json({ error: "unauthorized" }, 401);
   }
 

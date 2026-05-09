@@ -4,11 +4,15 @@ dist
 .env.local
 .DS_Store
 *.log
+*.err
 
 # WhatsApp server runtime state (contains private session keys — never commit)
 whatsapp-server/auth_state/
 whatsapp-server/*.bak
 whatsapp-server/*.bak2
+whatsapp-server/processed_leads.json
+whatsapp-server/allowed_lids.txt
 
 # Supabase CLI state (project link + cached binaries — local-only)
 supabase/.temp/
+.vercel

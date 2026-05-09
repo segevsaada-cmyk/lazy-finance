@@ -82,6 +82,24 @@ export default function AuthPage() {
     if (!acceptedTerms) { toast.error('יש לאשר את התקנון, מדיניות הפרטיות והצהרת הנגישות'); return; }
     setLoading(true);
 
+    // Server-side rate limit (anti-flood). Returns 429 with Retry-After
+    // if either the IP or the phone has signed up too recently.
+    const pre = await fetch('/api/signup-precheck', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ phone }),
+    });
+    if (!pre.ok) {
+      if (pre.status === 429) {
+        toast.error('יותר מדי ניסיונות. נסה שוב בעוד שעה.');
+      } else {
+        const j = await pre.json().catch(() => ({}));
+        toast.error(j.error || 'שגיאה בהרשמה');
+      }
+      setLoading(false);
+      return;
+    }
+
     const syntheticEmail = syntheticEmailFromPhone(phone);
     const { data, error } = await supabase.auth.signUp({ email: syntheticEmail, password });
     if (error) {
