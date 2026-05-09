@@ -24,6 +24,7 @@ export default function AuthPage() {
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
   const [acceptedTerms, setAcceptedTerms] = useState(false);
+  const [acceptedAdult, setAcceptedAdult] = useState(false);
 
   const TERMS_VERSION = CURRENT_TERMS_VERSION;
 
@@ -79,6 +80,7 @@ export default function AuthPage() {
     if (!name.trim()) { toast.error('יש להזין שם מלא'); return; }
     if (phoneDigitsOnly(phone).length < 9) { toast.error('יש להזין מספר נייד תקין'); return; }
     if (password.length < 6) { toast.error('סיסמה חייבת להיות לפחות 6 תווים'); return; }
+    if (!acceptedAdult) { toast.error('השירות מיועד לגיל 18 ומעלה בלבד'); return; }
     if (!acceptedTerms) { toast.error('יש לאשר את התקנון, מדיניות הפרטיות והצהרת הנגישות'); return; }
     setLoading(true);
 
@@ -129,6 +131,13 @@ export default function AuthPage() {
         setLoading(false);
         return;
       }
+
+      // Append-only terms acceptance record for evidentiary purposes.
+      await supabase.from('terms_acceptances').insert({
+        user_id: data.user.id,
+        version: TERMS_VERSION,
+        user_agent: navigator.userAgent.slice(0, 200),
+      });
     }
 
     navigate('/pending-approval');
@@ -249,6 +258,23 @@ export default function AuthPage() {
               <label className="flex items-start gap-2 pt-1 cursor-pointer group">
                 <input
                   type="checkbox"
+                  checked={acceptedAdult}
+                  onChange={e => setAcceptedAdult(e.target.checked)}
+                  disabled={loading}
+                  required
+                  className="mt-0.5 w-4 h-4 accent-rose-500 cursor-pointer flex-shrink-0"
+                  aria-describedby="adult-label"
+                />
+                <span id="adult-label" className="text-[11px] text-muted-foreground/80 leading-relaxed select-none">
+                  אני מאשר/ת שאני <b>בן/בת 18 ומעלה</b>.
+                </span>
+              </label>
+            )}
+
+            {!isLogin && (
+              <label className="flex items-start gap-2 pt-1 cursor-pointer group">
+                <input
+                  type="checkbox"
                   checked={acceptedTerms}
                   onChange={e => setAcceptedTerms(e.target.checked)}
                   disabled={loading}
@@ -270,7 +296,7 @@ export default function AuthPage() {
 
             <button
               type="submit"
-              disabled={loading || (!isLogin && !acceptedTerms)}
+              disabled={loading || (!isLogin && (!acceptedTerms || !acceptedAdult))}
               className="w-full py-3 mt-1 rounded-xl font-bold text-white transition-all active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed"
               style={{
                 background: 'linear-gradient(135deg, #be123c, #f43f5e)',

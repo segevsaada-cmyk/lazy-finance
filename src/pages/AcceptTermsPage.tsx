@@ -67,6 +67,17 @@ export default function AcceptTermsPage() {
       return;
     }
 
+    // Append to immutable acceptance history. Failure here is non-blocking
+    // (the user's flow shouldn't break for a logging hiccup) but it would
+    // be a flag worth alerting on in production.
+    await supabase
+      .from('terms_acceptances')
+      .insert({
+        user_id: user.id,
+        version: TERMS_VERSION,
+        user_agent: navigator.userAgent.slice(0, 200),
+      });
+
     await refreshProfile();
     toast.success('תודה! האישור נשמר');
     navigate(isApproved ? '/' : '/pending-approval', { replace: true });
