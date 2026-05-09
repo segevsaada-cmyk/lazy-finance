@@ -1,6 +1,7 @@
 import { useState } from 'react';
-import { Plus, ArrowUpRight, ArrowDownRight } from 'lucide-react';
+import { Plus, ArrowUpRight, ArrowDownRight, Search, X } from 'lucide-react';
 import { Separator } from '@/components/ui/separator';
+import { Input } from '@/components/ui/input';
 import { TransactionItem } from '@/components/budget/TransactionItem';
 import { MonthNavigator } from '@/components/budget/MonthNavigator';
 import { AddTransactionSheet } from '@/components/budget/AddTransactionSheet';
@@ -9,6 +10,7 @@ import { useStorage } from '@/hooks/useStorage';
 import { useBudget } from '@/hooks/useBudget';
 import { useDocumentTitle } from '@/hooks/useDocumentTitle';
 import { formatCurrency } from '@/lib/utils';
+import { ALL_CATEGORIES } from '@/constants/categories';
 
 export default function HistoryPage() {
   useDocumentTitle('תנועות');
@@ -17,12 +19,21 @@ export default function HistoryPage() {
   const [month, setMonth] = useState(today.getMonth() + 1);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [filter, setFilter] = useState<'all' | 'income' | 'expense'>('all');
+  const [search, setSearch] = useState('');
 
   const { transactions, settings, addTransaction, deleteTransaction } = useStorage();
   const { monthTransactions, totalIncome, totalExpenses } = useBudget({ transactions, settings, year, month });
 
+  const q = search.trim().toLowerCase();
   const filtered = [...monthTransactions]
     .filter(t => filter === 'all' || t.type === filter)
+    .filter(t => {
+      if (!q) return true;
+      const note = (t.note ?? '').toLowerCase();
+      const categoryName = ALL_CATEGORIES.find(c => c.id === t.categoryId)?.name?.toLowerCase() ?? '';
+      const amountStr = String(t.amount);
+      return note.includes(q) || categoryName.includes(q) || amountStr.includes(q);
+    })
     .sort((a, b) => b.date.localeCompare(a.date));
 
   const FILTERS = [
@@ -50,6 +61,29 @@ export default function HistoryPage() {
               {f.label}
             </button>
           ))}
+        </div>
+
+        {/* Search */}
+        <div className="relative">
+          <Search className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground/60" />
+          <Input
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="חיפוש בהערה, קטגוריה או סכום…"
+            className="text-right pr-9 pl-9"
+            aria-label="חיפוש בתנועות"
+          />
+          {search && (
+            <button
+              type="button"
+              onClick={() => setSearch('')}
+              aria-label="נקה חיפוש"
+              className="absolute left-2 top-1/2 -translate-y-1/2 p-1 rounded text-muted-foreground hover:text-foreground"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          )}
         </div>
 
         {/* Summary line */}
