@@ -163,7 +163,6 @@ export function AddTransactionSheet({
                 onChange={e => setAmount(e.target.value)}
                 onKeyDown={e => e.key === 'Enter' && handleSubmit()}
                 className="text-right text-3xl font-black h-16 pr-10 pl-3"
-                style={{ fontSize: '2rem' }}
               />
             </div>
           </div>

@@ -7,6 +7,34 @@ in front of each item.
 > Notation: **🔴** = security/legal exposure or visible bug, do urgently.
 > **🟡** = polish or feature with clear ROI.
 > **🟢** = future bet, worth spec'ing later.
+> **✅** = closed in a follow-up session — original entry kept for traceability.
+
+---
+
+## What was closed in session 2 (2026-05-09 morning)
+
+Per user request "continue everything you didn't finish":
+
+- ✅ A4 (partial): CORS on `send-daily-financial-tip` tightened from `*` to `null`.
+- ✅ A6: `/api/signup-precheck` rate-limits signup by IP (3/h) + phone (2/h).
+- ✅ A8: `whatsapp-server/server.err` (77MB PII) deleted; `*.err` added to gitignore.
+- ✅ A9: `send-daily-financial-tip` Authorization compare is now SHA-256 constant-time.
+- ✅ A10: `security_events` table + `log_security_event` RPC scaffolded (migration 20260509).
+- ✅ B1: TrialExpiredPage now discloses VAT, cancellation, 14-day cooling-off, no-auto-renewal.
+- ✅ B3: Age-affirmation checkbox on signup ("בן/בת 18 ומעלה").
+- ✅ B4: PrivacyPage §10 itemizes every localStorage key set by the app.
+- ✅ B6: `terms_acceptances` append-only table + AuthPage/AcceptTermsPage write to it.
+- ✅ C3: First-run dashboard checklist (3 guided actions, hides once any tx logged).
+- ✅ C4: BottomNav active dot enlarged + absolute-positioned + aria-current.
+- ✅ C5: BalanceCard constant pulse removed; aria-live="polite" added.
+- ✅ C8: `useDocumentTitle` hook applied to 7 pages.
+- ✅ C9: aria-current on BottomNav, aria-live on BalanceCard, aria-labels added.
+- ✅ C10: ChatTransactionSheet welcome line now greets by first name.
+- ✅ C11: HistoryPage search input (note + category name + amount).
+- ✅ D1: `useStreak` hook + 🔥 chip on Dashboard when streak ≥ 2 days.
+- ✅ AddTransactionSheet dead inline `style={{ fontSize: '2rem' }}` removed.
+
+The remaining items below are still open.
 
 ---
 
