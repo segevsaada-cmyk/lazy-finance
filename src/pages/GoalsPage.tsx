@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Plus, Target, Trash2, PlusCircle, CheckCircle2, Building2, Bot, Link2, X, ChevronLeft } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
+import { useDocumentTitle } from '@/hooks/useDocumentTitle';
 import { BottomNav } from '@/components/budget/BottomNav';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -20,6 +21,7 @@ interface Goal {
 }
 
 export default function GoalsPage() {
+  useDocumentTitle('מטרות');
   const { user } = useAuth();
   const [goals, setGoals] = useState<Goal[]>([]);
   const [loading, setLoading] = useState(true);

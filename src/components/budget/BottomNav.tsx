@@ -23,14 +23,18 @@ export function BottomNav() {
             <Link
               key={to}
               to={to}
+              aria-current={active ? 'page' : undefined}
+              aria-label={label}
               className={cn(
-                'flex flex-col items-center gap-1 py-3 px-3 transition-all',
+                'flex flex-col items-center gap-1 py-3 px-3 transition-all relative',
                 active ? 'text-primary' : 'text-muted-foreground hover:text-foreground'
               )}
             >
               <Icon className={cn('w-5 h-5', active && 'scale-110')} />
               <span className="text-xs font-medium">{label}</span>
-              {active && <div className="w-1 h-1 rounded-full bg-primary" />}
+              {active && (
+                <div className="absolute bottom-0.5 w-1.5 h-1.5 rounded-full bg-primary" />
+              )}
             </Link>
           );
         })}

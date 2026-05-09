@@ -10,12 +10,14 @@ import { BottomNav } from '@/components/budget/BottomNav';
 import { BankConnectionCard } from '@/components/budget/BankConnectionCard';
 import { useStorage } from '@/hooks/useStorage';
 import { useAuth } from '@/hooks/useAuth';
+import { useDocumentTitle } from '@/hooks/useDocumentTitle';
 import { supabase } from '@/integrations/supabase/client';
 import { formatCurrency } from '@/lib/utils';
 import { toast } from 'sonner';
 import { useNavigate } from 'react-router-dom';
 
 export default function SettingsPage() {
+  useDocumentTitle('הגדרות');
   const { settings, updateSettings, transactions } = useStorage();
   const { user, signOut, isAdmin } = useAuth();
   const navigate = useNavigate();

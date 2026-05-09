@@ -29,8 +29,9 @@ export function BalanceCard({ balance, status, expectedIncome, spentPercent, tot
       </div>
 
       <div
-        className={cn('text-5xl font-black font-mono tabular-nums leading-none tracking-tight', status === 'danger' && 'animate-pulse')}
+        className="text-5xl font-black font-mono tabular-nums leading-none tracking-tight"
         style={{ color }}
+        aria-live="polite"
       >
         {formatCurrency(balance)}
       </div>

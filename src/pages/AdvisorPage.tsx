@@ -3,6 +3,7 @@ import { Send, Sparkles, AlertCircle, Bot, Info } from 'lucide-react';
 import { BottomNav } from '@/components/budget/BottomNav';
 import { useStorage } from '@/hooks/useStorage';
 import { useBudget } from '@/hooks/useBudget';
+import { useDocumentTitle } from '@/hooks/useDocumentTitle';
 import { formatCurrency } from '@/lib/utils';
 import { ADVISOR_DISCLAIMER } from '@/constants/legal';
 import { supabase } from '@/integrations/supabase/client';
@@ -23,6 +24,7 @@ const WELCOME = `שלום! אני יועץ פיננסי AI של Lazy Finance.
 שאל אותי כל שאלה!`;
 
 export default function AdvisorPage() {
+  useDocumentTitle('יועץ AI');
   const [messages, setMessages] = useState<Message[]>([
     { role: 'assistant', content: WELCOME },
   ]);

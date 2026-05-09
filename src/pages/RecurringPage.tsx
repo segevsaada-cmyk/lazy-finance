@@ -5,10 +5,12 @@ import { RecurringItem } from '@/components/budget/RecurringItem';
 import { AddTransactionSheet } from '@/components/budget/AddTransactionSheet';
 import { BottomNav } from '@/components/budget/BottomNav';
 import { useStorage } from '@/hooks/useStorage';
+import { useDocumentTitle } from '@/hooks/useDocumentTitle';
 import { formatCurrency } from '@/lib/utils';
 import type { Transaction } from '@/types/budget';
 
 export default function RecurringPage() {
+  useDocumentTitle('תשלומים קבועים');
   const [sheetOpen, setSheetOpen] = useState(false);
   const [editingTemplate, setEditingTemplate] = useState<Transaction | null>(null);
 

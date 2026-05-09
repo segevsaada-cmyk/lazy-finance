@@ -6,6 +6,7 @@ import { ALL_CATEGORIES, CATEGORY_ICON_MAP } from '@/constants/categories';
 import { todayStr, formatCurrency } from '@/lib/utils';
 import type { Transaction } from '@/types/budget';
 import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from '@/hooks/useAuth';
 
 interface ChatTransactionSheetProps {
   open: boolean;
@@ -19,8 +20,10 @@ type ChatMsg =
   | { id: string; role: 'user'; text: string }
   | { id: string; role: 'saved'; tx: Transaction };
 
-const WELCOME =
-  'תכתוב לי בקצרה על העסקה. למשל "קניתי קפה ב-22 ש"ח" או "קיבלתי משכורת 8500".';
+const WELCOME_TEMPLATE = (firstName: string | null) =>
+  firstName
+    ? `היי ${firstName}, תכתוב לי בקצרה על העסקה. למשל "קניתי קפה ב-22 ש"ח" או "קיבלתי משכורת 8500".`
+    : 'תכתוב לי בקצרה על העסקה. למשל "קניתי קפה ב-22 ש"ח" או "קיבלתי משכורת 8500".';
 
 export function ChatTransactionSheet({
   open,
@@ -28,6 +31,9 @@ export function ChatTransactionSheet({
   onSave,
   onSwitchToForm,
 }: ChatTransactionSheetProps) {
+  const { profile } = useAuth();
+  const firstName = profile?.fullName?.trim().split(/\s+/)[0] ?? null;
+
   const [messages, setMessages] = useState<ChatMsg[]>([]);
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
@@ -35,9 +41,9 @@ export function ChatTransactionSheet({
 
   useEffect(() => {
     if (!open) return;
-    setMessages([{ id: 'welcome', role: 'bot', text: WELCOME }]);
+    setMessages([{ id: 'welcome', role: 'bot', text: WELCOME_TEMPLATE(firstName) }]);
     setInput('');
-  }, [open]);
+  }, [open, firstName]);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });

@@ -7,9 +7,11 @@ import { AddTransactionSheet } from '@/components/budget/AddTransactionSheet';
 import { BottomNav } from '@/components/budget/BottomNav';
 import { useStorage } from '@/hooks/useStorage';
 import { useBudget } from '@/hooks/useBudget';
+import { useDocumentTitle } from '@/hooks/useDocumentTitle';
 import { formatCurrency } from '@/lib/utils';
 
 export default function HistoryPage() {
+  useDocumentTitle('תנועות');
   const today = new Date();
   const [year, setYear] = useState(today.getFullYear());
   const [month, setMonth] = useState(today.getMonth() + 1);

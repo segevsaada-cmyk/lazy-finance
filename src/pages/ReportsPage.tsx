@@ -3,6 +3,7 @@ import { BarChart3, TrendingUp, TrendingDown, ArrowUpRight, ArrowDownRight } fro
 import { BottomNav } from '@/components/budget/BottomNav';
 import { SmartInsights } from '@/components/budget/SmartInsights';
 import { useStorage } from '@/hooks/useStorage';
+import { useDocumentTitle } from '@/hooks/useDocumentTitle';
 import { CATEGORY_ICON_MAP, EXPENSE_CATEGORIES, INCOME_CATEGORIES } from '@/constants/categories';
 import { formatCurrency, getMonthLabel } from '@/lib/utils';
 
@@ -22,6 +23,7 @@ function categoryName(id: string): string {
 }
 
 export default function ReportsPage() {
+  useDocumentTitle('דוחות');
   const { transactions, settings } = useStorage();
   const [months, setMonths] = useState(6);
 

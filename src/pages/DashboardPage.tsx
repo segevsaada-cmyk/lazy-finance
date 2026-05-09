@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Plus, RefreshCw, Moon, Sun } from 'lucide-react';
+import { Plus, RefreshCw, Moon, Sun, Flame } from 'lucide-react';
 import { useTheme } from '@/hooks/useTheme';
 import { Separator } from '@/components/ui/separator';
 import { BalanceCard } from '@/components/budget/BalanceCard';
@@ -9,10 +9,13 @@ import { RecurringItem } from '@/components/budget/RecurringItem';
 import { MonthNavigator } from '@/components/budget/MonthNavigator';
 import { AddTransactionSheet } from '@/components/budget/AddTransactionSheet';
 import { ChatTransactionSheet } from '@/components/budget/ChatTransactionSheet';
+import { FirstRunChecklist } from '@/components/budget/FirstRunChecklist';
 import { VATCard } from '@/components/budget/VATCard';
 import { BottomNav } from '@/components/budget/BottomNav';
 import { useStorage } from '@/hooks/useStorage';
 import { useBudget } from '@/hooks/useBudget';
+import { useStreak } from '@/hooks/useStreak';
+import { useDocumentTitle } from '@/hooks/useDocumentTitle';
 import type { Transaction } from '@/types/budget';
 
 export default function DashboardPage() {
@@ -22,10 +25,15 @@ export default function DashboardPage() {
   const [sheetOpen, setSheetOpen] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
 
+  useDocumentTitle('דאשבורד');
+
   const { theme, toggle: toggleTheme } = useTheme();
   const { transactions, settings, addTransaction, deleteTransaction, confirmRecurring } = useStorage();
   const { totalIncome, totalExpenses, balance, balanceStatus, monthTransactions, pendingRecurring, spentPercent } =
     useBudget({ transactions, settings, year, month });
+  const streak = useStreak(transactions);
+
+  const isFirstRun = transactions.filter(t => !t.isRecurring).length === 0;
 
   const handleConfirm = (template: Transaction) => {
     confirmRecurring(template);
@@ -71,7 +79,31 @@ export default function DashboardPage() {
             <span style={{ color: '#22d3a8' }}>Finance</span>
           </h1>
           <p className="text-[11px] text-muted-foreground mt-0.5">כסף עובד. אתה לא.</p>
+          {streak >= 2 && (
+            <div
+              className="mt-2 inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold"
+              style={{
+                background: 'rgba(249, 115, 22, 0.12)',
+                color: '#fb923c',
+              }}
+              title={`רשמת תנועה ב־${streak} ימים ברצף`}
+              aria-label={`רצף של ${streak} ימים ברצף`}
+            >
+              <Flame className="w-3 h-3" />
+              {streak} ימים ברצף
+            </div>
+          )}
         </div>
+
+        {/* First-run welcome — only when there are zero non-recurring transactions */}
+        {isFirstRun && (
+          <FirstRunChecklist
+            hasIncome={settings.expectedMonthlyIncome > 0}
+            hasRecurring={transactions.some(t => t.isRecurring)}
+            hasTransactions={false}
+            onAddTransaction={() => setChatOpen(true)}
+          />
+        )}
 
         {/* Month navigation */}
         <MonthNavigator
