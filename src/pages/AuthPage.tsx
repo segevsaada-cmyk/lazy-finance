@@ -193,21 +193,12 @@ export default function AuthPage() {
 
         <div className="px-6 py-5">
           {/* Tabs */}
-          <div className="flex mb-5 bg-secondary rounded-lg p-0.5 gap-0.5">
-            {[{ id: true, label: 'כניסה' }, { id: false, label: 'הרשמה' }].map(tab => (
-              <button
-                key={String(tab.id)}
-                type="button"
-                onClick={() => setIsLogin(tab.id)}
-                className={`flex-1 py-2 text-sm font-semibold rounded-md transition-all duration-200 ${
-                  isLogin === tab.id
-                    ? 'bg-card text-foreground shadow-sm'
-                    : 'text-muted-foreground hover:text-foreground'
-                }`}
-              >
-                {tab.label}
-              </button>
-            ))}
+          {/* Private alpha — public signup is closed; only the operator and a
+              handful of approved early users can log in. The signup tab is
+              hidden but the handler is preserved so admin tooling can still
+              create accounts via the admin-users edge function. */}
+          <div className="mb-5 flex items-center justify-center gap-2 text-[11px] text-muted-foreground/70 bg-secondary/40 rounded-lg py-2 px-3">
+            <span>🔒 גרסת alpha פרטית — הרשמה סגורה כעת</span>
           </div>
 
           <form onSubmit={isLogin ? handleLogin : handleSignup} className="space-y-3.5">
