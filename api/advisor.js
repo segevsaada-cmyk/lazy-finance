@@ -21,7 +21,7 @@ import { dirname, join } from 'path';
 import {
   requireMethod, rejectIfTooLarge, requireUser,
   enforceRateLimit, checkAiBudget, recordAiTokens,
-  detectPromptInjection, scrubSecrets,
+  detectPromptInjection, scrubSecrets, requireActiveAccess,
 } from './_lib/security.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -67,6 +67,7 @@ export default async function handler(req, res) {
 
   const user = await requireUser(req, res);
   if (!user) return;
+  if (!(await requireActiveAccess(res, user.id))) return;
 
   if (!(await enforceRateLimit(req, res, `advisor:${user.id}`, RATE_LIMIT, 60))) return;
   if (!(await checkAiBudget(res, user.id, DAILY_TOKEN_BUDGET))) return;

@@ -10,10 +10,17 @@ const pino = require('pino');
 const app = express();
 app.use(express.json());
 
-const API_KEY = process.env.API_KEY || 'lazy-finance-key';
+const API_KEY = process.env.API_KEY;
+if (!API_KEY || API_KEY.length < 16) {
+  console.error('FATAL: API_KEY env var missing or too short (need ≥16 chars).');
+  process.exit(1);
+}
 const PORT = process.env.PORT || 3002;
 const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY;
 const MODEL = process.env.CLAUDE_MODEL || 'claude-sonnet-4-6';
+
+// Whitelisted dir for /send-media file_path (prevents arbitrary host file read).
+const MEDIA_DIR = path.resolve(process.env.MEDIA_DIR || path.join(__dirname, 'media'));
 
 // Bot connects to a dedicated WA account (e.g. business number 0557201465)
 // and replies only to the user's personal number (0524844686).
@@ -32,6 +39,147 @@ try {
   console.log(`📚 Loaded knowledge.md (${KNOWLEDGE.length} chars)`);
 } catch (e) {
   console.warn('⚠️  No knowledge.md found — bot will run without context.');
+}
+
+// ─── Arbox Lead Pipeline ─────────────────────────────────────────────────────
+// Detects "נכנס ליד חדש" messages arriving at this WA account and forwards
+// them to the Supabase edge function (which creates an Arbox lead with the
+// correct owner / status / source). State file dedupes by msgId + phone.
+const LEAD_MARKER = 'נכנס ליד חדש';
+// Upgrade ("אפגרייד") sends this welcome bot message FROM Segev's account
+// directly to each new lead. The message itself = lead-arrival signal.
+const UPGRADE_MARKER = 'איזה כיף שפנית';
+const ARBOX_WEBHOOK_URL = process.env.ARBOX_WEBHOOK_URL;
+const ARBOX_WEBHOOK_BEARER = process.env.SUPABASE_ANON_KEY;
+if (!ARBOX_WEBHOOK_URL || !ARBOX_WEBHOOK_BEARER) {
+  console.warn('⚠️  ARBOX_WEBHOOK_URL or SUPABASE_ANON_KEY missing — Arbox lead forwarding disabled.');
+}
+const PROCESSED_LEADS_FILE = path.join(__dirname, 'processed_leads.json');
+
+function loadProcessedLeads() {
+  try { return JSON.parse(fs.readFileSync(PROCESSED_LEADS_FILE, 'utf8')); }
+  catch { return { msg_ids: {}, phones: {} }; }
+}
+function saveProcessedLeads(state) {
+  try { fs.writeFileSync(PROCESSED_LEADS_FILE, JSON.stringify(state, null, 2)); }
+  catch (e) { console.error('processed_leads write failed:', e.message); }
+}
+
+function parseLeadMessage(text) {
+  const nameM = /שם:\s*([^\n]+)/.exec(text);
+  const phoneM = /טלפון:\s*([\d\-\s+]+)/.exec(text);
+  if (!nameM || !phoneM) return null;
+  const areaM = /איזור[^:]*:\s*([^\n]+)/.exec(text);
+  const gradeM = /באיזה כיתה[^:]*:\s*([^\n]+)/.exec(text);
+  let phone = phoneM[1].replace(/[\s\-]/g, '');
+  if (phone.startsWith('+')) {
+    // already international
+  } else if (phone.startsWith('972')) {
+    phone = '+' + phone;
+  } else if (phone.startsWith('0')) {
+    phone = '+972' + phone.slice(1);
+  } else {
+    phone = '+972' + phone;
+  }
+  return {
+    first_name: nameM[1].trim(),
+    phone,
+    area: areaM ? areaM[1].trim() : '',
+    grade: gradeM ? gradeM[1].trim() : '',
+  };
+}
+
+async function pushLeadToArbox(lead) {
+  // last_name carries the source label (כרישים במדיה / אפגרייד) so Segev can
+  // identify the channel at a glance in Arbox.
+  const payload = {
+    first_name: lead.first_name,
+    last_name: lead.last_name || 'כרישים במדיה',
+    phone: lead.phone,
+    area: lead.area,
+    grade: lead.grade,
+    source: 'whatsapp',
+    comment: lead.comment || 'וואטסאפ (auto)',
+  };
+  const res = await fetch(ARBOX_WEBHOOK_URL, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${ARBOX_WEBHOOK_BEARER}`,
+    },
+    body: JSON.stringify(payload),
+  });
+  const text = await res.text();
+  let data;
+  try { data = JSON.parse(text); } catch { data = text; }
+  return { ok: res.ok, status: res.status, data };
+}
+
+async function handleUpgradeLead(chatJid, msgKey) {
+  const phoneDigits = chatJid.replace(/@.*/, '').replace(/\D/g, '');
+  if (!phoneDigits || phoneDigits.length < 9) return;
+  const phone = '+' + (phoneDigits.startsWith('972') ? phoneDigits : '972' + phoneDigits.replace(/^0/, ''));
+  const state = loadProcessedLeads();
+  if (state.phones[phone]) {
+    console.log(`⏭  upgrade phone already pushed: ${phone}`);
+    return;
+  }
+  const last4 = phone.slice(-4);
+  const lead = {
+    first_name: 'ליד ' + last4,
+    last_name: 'אפגרייד',
+    phone,
+    comment: 'ליד אוטומטי מבוט אפגרייד',
+  };
+  console.log(`🎯 NEW UPGRADE LEAD: ${phone}`);
+  try {
+    const r = await pushLeadToArbox(lead);
+    console.log(`   → webhook ${r.status}: ${JSON.stringify(r.data).slice(0, 300)}`);
+    if (r.ok) {
+      state.phones[phone] = { ts: Date.now(), msgId: msgKey?.id || '', name: lead.first_name, source: 'upgrade' };
+      saveProcessedLeads(state);
+    } else {
+      console.error(`   ❌ upgrade webhook returned ${r.status}, NOT marking processed`);
+    }
+  } catch (e) {
+    console.error(`   ❌ upgrade webhook error: ${e.message}`);
+  }
+}
+
+async function handleIncomingLead(text, msgKey) {
+  const state = loadProcessedLeads();
+  const msgId = msgKey?.id || '';
+  if (msgId && state.msg_ids[msgId]) {
+    console.log(`⏭  lead msg already processed: ${msgId}`);
+    return;
+  }
+  const lead = parseLeadMessage(text);
+  if (!lead) {
+    console.log('⚠️  lead marker found but parse failed (missing שם/טלפון)');
+    return;
+  }
+  if (state.phones[lead.phone]) {
+    console.log(`⏭  phone already pushed: ${lead.phone} (${lead.first_name})`);
+    if (msgId) {
+      state.msg_ids[msgId] = { phone: lead.phone, ts: Date.now(), dup: true };
+      saveProcessedLeads(state);
+    }
+    return;
+  }
+  console.log(`🎯 NEW LEAD: ${lead.first_name} (${lead.phone}) area=${lead.area} grade=${lead.grade}`);
+  try {
+    const r = await pushLeadToArbox(lead);
+    console.log(`   → webhook ${r.status}: ${JSON.stringify(r.data).slice(0, 300)}`);
+    if (r.ok) {
+      state.phones[lead.phone] = { ts: Date.now(), msgId, name: lead.first_name };
+      if (msgId) state.msg_ids[msgId] = { phone: lead.phone, ts: Date.now(), ok: true };
+      saveProcessedLeads(state);
+    } else {
+      console.error(`   ❌ webhook returned ${r.status}, NOT marking processed`);
+    }
+  } catch (e) {
+    console.error(`   ❌ webhook error: ${e.message}`);
+  }
 }
 
 const BOT_MARKER = '🤖';
@@ -127,13 +275,38 @@ async function connect() {
     for (const m of messages) {
       const t = m.message?.conversation || m.message?.extendedTextMessage?.text || '';
       const messageTypes = m.message ? Object.keys(m.message).join(',') : 'NO_MESSAGE';
-      console.log(`🔎 [event=${type}] from=${m.key.remoteJid} fromMe=${m.key.fromMe} types=[${messageTypes}] text="${t.slice(0,60)}"`);
+      console.log(`🔎 [event=${type}] from=${m.key.remoteJid} participant=${m.key.participant || '-'} fromMe=${m.key.fromMe} types=[${messageTypes}] text="${t.slice(0,60)}"`);
       if (!t && m.message) {
         console.log('   FULL MESSAGE:', JSON.stringify(m.message).slice(0, 400));
       }
     }
     if (type !== 'notify' && type !== 'append') return;
     if (!myJid) return;
+
+    // Arbox lead detection — runs before AI whitelist so leads from any
+    // sender (Make/Zapier/manual paste) are captured. fromMe=true is also
+    // honored so leads forwarded by Segev himself still flow through.
+    for (const m of messages) {
+      const txt = m.message?.conversation
+        || m.message?.extendedTextMessage?.text
+        || '';
+      if (txt.includes(LEAD_MARKER)) {
+        try { await handleIncomingLead(txt, m.key); }
+        catch (e) { console.error('lead handler error:', e.message); }
+      }
+      // Upgrade welcome bot — fires from our own account to a new lead's chat.
+      // Trigger only on outbound messages to direct chats (not groups).
+      const caption = m.message?.imageMessage?.caption
+        || m.message?.videoMessage?.caption
+        || '';
+      const chatJid = m.key?.remoteJid || '';
+      if (m.key?.fromMe
+          && chatJid.endsWith('@s.whatsapp.net')
+          && (txt.includes(UPGRADE_MARKER) || caption.includes(UPGRADE_MARKER))) {
+        try { await handleUpgradeLead(chatJid, m.key); }
+        catch (e) { console.error('upgrade lead handler error:', e.message); }
+      }
+    }
 
     // STRICT WHITELIST
     // - Direct phone: must match this list (for @s.whatsapp.net chats)
@@ -294,6 +467,70 @@ app.post('/send', requireKey, async (req, res) => {
   try {
     await sock.sendMessage(toJid(phone), { text: message });
     res.json({ success: true, phone });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Send a media file (video / image / document) by absolute path on disk.
+// Body: { phone, file_path, kind: 'video'|'image'|'document', caption?, mimetype?, filename? }
+app.post('/send-media', requireKey, async (req, res) => {
+  if (!isConnected) return res.status(503).json({ error: 'WhatsApp not connected' });
+  const { phone, file_path, kind = 'video', caption = '', mimetype, filename } = req.body || {};
+  if (!phone || !file_path) return res.status(400).json({ error: 'phone and file_path required' });
+  try {
+    // Whitelist: file_path MUST resolve under MEDIA_DIR (no traversal, no symlinks).
+    const resolved = fs.realpathSync(path.resolve(file_path));
+    if (!resolved.startsWith(MEDIA_DIR + path.sep) && resolved !== MEDIA_DIR) {
+      return res.status(403).json({ error: 'file_path outside whitelisted MEDIA_DIR' });
+    }
+    if (!fs.existsSync(resolved)) return res.status(400).json({ error: `file not found` });
+    const stat = fs.statSync(resolved);
+    if (!stat.isFile()) return res.status(400).json({ error: 'not a regular file' });
+    if (stat.size > 50 * 1024 * 1024) return res.status(413).json({ error: 'file too large (50MB max)' });
+    const buffer = fs.readFileSync(resolved);
+    const baseName = filename || path.basename(resolved);
+
+    let payload;
+    if (kind === 'image') {
+      payload = { image: buffer, caption, mimetype: mimetype || 'image/jpeg' };
+    } else if (kind === 'document') {
+      payload = { document: buffer, mimetype: mimetype || 'application/octet-stream', fileName: baseName, caption };
+    } else {
+      // video (default) — Instagram-friendly H.264/AAC MP4 plays inline.
+      // Explicitly disable gifPlayback so audio is preserved (otherwise Baileys
+      // may auto-detect short clips as GIFs and strip the audio track).
+      payload = {
+        video: buffer,
+        caption,
+        mimetype: mimetype || 'video/mp4',
+        fileName: baseName,
+        gifPlayback: false,
+        ptv: false,
+      };
+    }
+
+    const sent = await sock.sendMessage(toJid(phone), payload);
+    res.json({ success: true, phone, kind, bytes: buffer.length, message_id: sent?.key?.id || null });
+  } catch (e) {
+    console.error('[send-media error]', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.get('/group/:jid', requireKey, async (req, res) => {
+  if (!isConnected) return res.status(503).json({ error: 'WA not connected' });
+  try {
+    const jid = req.params.jid.endsWith('@g.us') ? req.params.jid : `${req.params.jid}@g.us`;
+    const meta = await sock.groupMetadata(jid);
+    res.json({
+      id: meta.id,
+      subject: meta.subject,
+      desc: meta.desc,
+      owner: meta.owner,
+      creation: meta.creation,
+      participants: meta.participants?.map(p => ({ id: p.id, admin: p.admin })) || [],
+    });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }

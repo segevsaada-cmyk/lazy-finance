@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { Send, Sparkles, AlertCircle, Bot, Info } from 'lucide-react';
+import { Send, Sparkles, AlertCircle, Bot, Info, Camera, Share2, Receipt } from 'lucide-react';
 import { BottomNav } from '@/components/budget/BottomNav';
 import { useStorage } from '@/hooks/useStorage';
 import { useBudget } from '@/hooks/useBudget';
@@ -8,9 +8,28 @@ import { formatCurrency } from '@/lib/utils';
 import { ADVISOR_DISCLAIMER } from '@/constants/legal';
 import { supabase } from '@/integrations/supabase/client';
 
+interface ReceiptData {
+  extracted: {
+    vendor: string;
+    amount: number;
+    date: string;
+    time: string | null;
+    category_id: string;
+    items: string[];
+    summary: string;
+  };
+  feedback: string;
+  transaction_id: string;
+  accountant: { email: string; subject: string; body: string };
+}
+
 interface Message {
   role: 'user' | 'assistant';
   content: string;
+  type?: 'text' | 'receipt';
+  imageDataUrl?: string;
+  receipt?: ReceiptData;
+  receiptFile?: File;
 }
 
 const WELCOME = `שלום! אני יועץ פיננסי AI של Lazy Finance.
@@ -19,9 +38,9 @@ const WELCOME = `שלום! אני יועץ פיננסי AI של Lazy Finance.
 • האם כדאי לבצע הוצאה מסוימת?
 • איפה אפשר לחסוך?
 • שאלות על השקעות
-• כל שאלה פיננסית אחרת
+• 📸 לחץ על המצלמה — אצלם קבלה, אחלץ נתונים, ארשום אוטומטית
 
-שאל אותי כל שאלה!`;
+שאל אותי כל שאלה או שלח קבלה!`;
 
 export default function AdvisorPage() {
   useDocumentTitle('יועץ AI');
@@ -33,6 +52,7 @@ export default function AdvisorPage() {
   const [apiError, setApiError] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const today = new Date();
   const { transactions, settings } = useStorage();
@@ -99,6 +119,115 @@ export default function AdvisorPage() {
     }
   };
 
+  const fileToBase64 = (file: File): Promise<{ base64: string; dataUrl: string }> =>
+    new Promise((resolve, reject) => {
+      const r = new FileReader();
+      r.onload = () => {
+        const dataUrl = r.result as string;
+        const base64 = dataUrl.split(',')[1] || '';
+        resolve({ base64, dataUrl });
+      };
+      r.onerror = () => reject(r.error);
+      r.readAsDataURL(file);
+    });
+
+  const handleReceiptFile = async (file: File) => {
+    if (loading) return;
+    if (file.size > 8 * 1024 * 1024) {
+      setMessages(prev => [...prev, { role: 'assistant', content: '⚠️ הקבלה גדולה מדי (מקס 8MB). נסה לצלם שוב באיכות נמוכה יותר.' }]);
+      return;
+    }
+    if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
+      setMessages(prev => [...prev, { role: 'assistant', content: '⚠️ סוג קובץ לא נתמך. JPG / PNG / WebP בלבד.' }]);
+      return;
+    }
+
+    setLoading(true);
+    setApiError(null);
+
+    let dataUrl = '';
+    try {
+      const conv = await fileToBase64(file);
+      dataUrl = conv.dataUrl;
+      setMessages(prev => [
+        ...prev,
+        { role: 'user', content: '📸 קבלה נשלחה', imageDataUrl: dataUrl, type: 'text' },
+      ]);
+
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData.session?.access_token;
+      const res = await fetch('/api/process-receipt', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({
+          image: conv.base64,
+          mimeType: file.type,
+          context: financialContext,
+        }),
+      });
+      const data = await res.json();
+
+      if (!res.ok || data.error) {
+        if (data.error === 'ANTHROPIC_API_KEY_MISSING') {
+          setApiError('missing_key');
+        } else if (data.error === 'not_a_receipt') {
+          setMessages(prev => [...prev, { role: 'assistant', content: '⚠️ זאת לא נראית כמו קבלה. נסה תמונה ברורה יותר של הקבלה.' }]);
+        } else if (data.error === 'image_too_large') {
+          setMessages(prev => [...prev, { role: 'assistant', content: '⚠️ הקבלה גדולה מדי. נסה איכות נמוכה יותר.' }]);
+        } else if (data.error === 'amount_invalid') {
+          setMessages(prev => [...prev, { role: 'assistant', content: '⚠️ לא הצלחתי לזהות את הסכום. ודא שהסכום הסופי מופיע ברור בקבלה.' }]);
+        } else {
+          setApiError('generic');
+        }
+        return;
+      }
+
+      setMessages(prev => [
+        ...prev,
+        {
+          role: 'assistant',
+          content: '',
+          type: 'receipt',
+          receipt: data as ReceiptData,
+          receiptFile: file,
+        },
+      ]);
+    } catch (err) {
+      console.error('Receipt processing failed:', err);
+      setApiError('generic');
+    } finally {
+      setLoading(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
+  const onFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) handleReceiptFile(file);
+  };
+
+  const shareToAccountant = async (receipt: ReceiptData, imageFile?: File) => {
+    const { email, subject, body } = receipt.accountant;
+    const shareData: ShareData = { title: subject, text: body };
+    if (imageFile && navigator.canShare?.({ files: [imageFile] })) {
+      shareData.files = [imageFile];
+    }
+
+    if (navigator.share && navigator.canShare?.(shareData)) {
+      try {
+        await navigator.share(shareData);
+        return;
+      } catch (err) {
+        if ((err as Error).name === 'AbortError') return;
+      }
+    }
+    const params = new URLSearchParams({ subject, body: body + (imageFile ? '\n\n(צרף את התמונה מהגלריה)' : '') });
+    window.location.href = `mailto:${email}?${params.toString()}`;
+  };
+
   const SUGGESTIONS = ['כמה אני מוציא על אוכל?', 'איפה אני יכול לחסוך?', 'האם כדאי לי להשקיע?'];
 
   return (
@@ -160,26 +289,79 @@ export default function AdvisorPage() {
             </div>
           )}
 
-          {messages.map((m, i) => (
-            <div key={i} className={`flex ${m.role === 'user' ? 'justify-start' : 'justify-end'}`}>
-              <div
-                className={`max-w-[85%] rounded-2xl px-4 py-3 text-sm leading-relaxed whitespace-pre-wrap ${
-                  m.role === 'user'
-                    ? 'bg-secondary text-foreground rounded-tr-sm'
-                    : 'text-foreground rounded-tl-sm border border-border'
-                }`}
-                style={m.role === 'assistant' ? { background: 'rgba(244,63,94,0.06)' } : {}}
-              >
-                {m.role === 'assistant' && i > 0 && (
-                  <div className="flex items-center gap-1.5 mb-2 pb-2 border-b border-border/40">
-                    <Sparkles className="w-3 h-3" style={{ color: '#f43f5e' }} />
-                    <span className="text-[10px] font-semibold" style={{ color: '#f43f5e' }}>יועץ AI</span>
+          {messages.map((m, i) => {
+            if (m.type === 'receipt' && m.receipt) {
+              const r = m.receipt;
+              return (
+                <div key={i} className="flex justify-end">
+                  <div
+                    className="max-w-[85%] rounded-2xl rounded-tl-sm border border-border overflow-hidden"
+                    style={{ background: 'rgba(244,63,94,0.06)' }}
+                  >
+                    <div className="px-4 py-3 border-b border-border/40 flex items-center gap-1.5">
+                      <Receipt className="w-3.5 h-3.5" style={{ color: '#f43f5e' }} />
+                      <span className="text-[10px] font-semibold" style={{ color: '#f43f5e' }}>קבלה נרשמה</span>
+                    </div>
+                    <div className="px-4 py-3 space-y-1 text-sm">
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">ספק:</span>
+                        <span className="font-semibold">{r.extracted.vendor}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">סכום:</span>
+                        <span className="font-bold tabular-nums">₪{r.extracted.amount.toLocaleString('he-IL')}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">תאריך:</span>
+                        <span className="tabular-nums">{r.extracted.date}{r.extracted.time ? ` · ${r.extracted.time}` : ''}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">קטגוריה:</span>
+                        <span>{r.extracted.category_id}</span>
+                      </div>
+                    </div>
+                    {r.feedback && (
+                      <div className="px-4 py-3 border-t border-border/40 text-sm whitespace-pre-wrap text-foreground/90">
+                        💡 {r.feedback}
+                      </div>
+                    )}
+                    <button
+                      onClick={() => shareToAccountant(r, m.receiptFile)}
+                      className="w-full px-4 py-3 border-t border-border/40 flex items-center justify-center gap-2 text-sm font-semibold transition-colors hover:bg-white/5"
+                      style={{ color: '#f43f5e' }}
+                    >
+                      <Share2 className="w-4 h-4" />
+                      שלח לדותן (רואה חשבון)
+                    </button>
                   </div>
-                )}
-                {m.content}
+                </div>
+              );
+            }
+
+            return (
+              <div key={i} className={`flex ${m.role === 'user' ? 'justify-start' : 'justify-end'}`}>
+                <div
+                  className={`max-w-[85%] rounded-2xl px-4 py-3 text-sm leading-relaxed whitespace-pre-wrap ${
+                    m.role === 'user'
+                      ? 'bg-secondary text-foreground rounded-tr-sm'
+                      : 'text-foreground rounded-tl-sm border border-border'
+                  }`}
+                  style={m.role === 'assistant' ? { background: 'rgba(244,63,94,0.06)' } : {}}
+                >
+                  {m.role === 'assistant' && i > 0 && (
+                    <div className="flex items-center gap-1.5 mb-2 pb-2 border-b border-border/40">
+                      <Sparkles className="w-3 h-3" style={{ color: '#f43f5e' }} />
+                      <span className="text-[10px] font-semibold" style={{ color: '#f43f5e' }}>יועץ AI</span>
+                    </div>
+                  )}
+                  {m.imageDataUrl && (
+                    <img src={m.imageDataUrl} alt="קבלה" className="rounded-lg mb-2 max-h-48 w-auto" />
+                  )}
+                  {m.content}
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
 
           {loading && (
             <div className="flex justify-end">
@@ -219,7 +401,23 @@ export default function AdvisorPage() {
 
       {/* Input */}
       <div className="border-t border-border bg-card px-4 py-3 flex-shrink-0" style={{ paddingBottom: 'max(12px, env(safe-area-inset-bottom))' }}>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/jpeg,image/png,image/webp"
+          capture="environment"
+          onChange={onFileChange}
+          className="hidden"
+        />
         <div className="max-w-lg mx-auto flex gap-2">
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            disabled={loading}
+            aria-label="צלם קבלה"
+            className="w-10 h-10 rounded-xl flex items-center justify-center transition-all active:scale-90 disabled:opacity-40 border border-border hover:bg-accent"
+          >
+            <Camera className="w-4 h-4" style={{ color: '#f43f5e' }} />
+          </button>
           <input
             ref={inputRef}
             type="text"

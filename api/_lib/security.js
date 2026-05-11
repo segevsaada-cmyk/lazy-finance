@@ -107,6 +107,47 @@ export async function recordAiTokens(userId, tokens) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────
+// Server-side trial / subscription gate — denies AI calls from accounts
+// whose trial has expired or whose subscription is in a non-paying state.
+// Admins (role=admin) always pass. Fail-closed in prod, open in dev.
+// ─────────────────────────────────────────────────────────────────────────
+export async function requireActiveAccess(res, userId) {
+  const sb = adminClient();
+  const { data, error } = await sb
+    .from('user_settings')
+    .select('role, subscription_status, trial_ends_at, is_approved')
+    .eq('user_id', userId)
+    .maybeSingle();
+
+  if (error) {
+    console.error('requireActiveAccess lookup error:', error.message);
+    if (process.env.NODE_ENV === 'production') {
+      res.status(503).json({ error: 'auth check unavailable' });
+      return false;
+    }
+    return true;
+  }
+  if (!data) {
+    res.status(403).json({ error: 'no_profile' });
+    return false;
+  }
+  if (data.role === 'admin') return true;
+  if (!data.is_approved) {
+    res.status(403).json({ error: 'not_approved' });
+    return false;
+  }
+  if (data.subscription_status === 'expired' || data.subscription_status === 'cancelled') {
+    res.status(402).json({ error: 'subscription_inactive' });
+    return false;
+  }
+  if (data.trial_ends_at && new Date(data.trial_ends_at) < new Date()) {
+    res.status(402).json({ error: 'trial_expired' });
+    return false;
+  }
+  return true;
+}
+
+// ─────────────────────────────────────────────────────────────────────────
 // Best-effort client IP. Vercel sets x-forwarded-for; first hop is the
 // real client. Used only as a rate-limit key, never trusted for authz.
 // ─────────────────────────────────────────────────────────────────────────

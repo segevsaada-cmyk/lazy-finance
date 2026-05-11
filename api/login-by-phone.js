@@ -50,12 +50,16 @@ export default async function handler(req, res) {
     `${SUPABASE_URL}/rest/v1/user_settings?phone=ilike.%25${last9}&select=user_id`,
     { headers: auth },
   );
+  // Single neutral error for all non-success paths — denies the attacker
+  // information about whether a phone exists, has no email, etc.
+  const NEUTRAL_ERR = { error: 'invalid_credentials', message: 'מספר או סיסמה שגויים' };
+
   if (!lookup.ok) {
     return res.status(502).json({ error: 'lookup failed' });
   }
   const rows = await lookup.json();
   if (!rows.length) {
-    return res.status(404).json({ error: 'מספר לא נמצא במערכת' });
+    return res.status(404).json(NEUTRAL_ERR);
   }
 
   const userRes = await fetch(
@@ -64,7 +68,7 @@ export default async function handler(req, res) {
   );
   const u = await userRes.json();
   if (!u.email) {
-    return res.status(404).json({ error: 'no email for user' });
+    return res.status(404).json(NEUTRAL_ERR);
   }
   return res.status(200).json({ email: u.email });
 }

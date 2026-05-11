@@ -12,7 +12,7 @@
  * Defenses: method gate, body-size cap, JWT auth, per-user rate limit.
  */
 import {
-  requireMethod, rejectIfTooLarge, requireUser, enforceRateLimit,
+  requireMethod, rejectIfTooLarge, requireUser, enforceRateLimit, requireActiveAccess,
 } from './_lib/security.js';
 
 const MAX_TEXT = 1000;
@@ -119,6 +119,7 @@ export default async function handler(req, res) {
 
   const user = await requireUser(req, res);
   if (!user) return;
+  if (!(await requireActiveAccess(res, user.id))) return;
 
   if (!(await enforceRateLimit(req, res, `categorize:${user.id}`, 60, 60))) return;
 
