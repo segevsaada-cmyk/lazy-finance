@@ -14,6 +14,12 @@
 import { createScraper, CompanyTypes } from 'israeli-bank-scrapers';
 import { createClient } from '@supabase/supabase-js';
 import { createDecipheriv } from 'node:crypto';
+import puppeteer from 'puppeteer';
+import { homedir } from 'node:os';
+
+// Banks/cards that enforce OTP on every login → reuse a persistent browser
+// profile (device-trust) so the SMS code is only needed once (during pairing).
+const PROFILE_BANKS = { max: process.env.MAX_PROFILE_DIR || `${homedir()}/.lazy-max-profile` };
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -84,21 +90,28 @@ function guessCategory(description = '', type) {
   if (type === 'income') {
     if (/משכורת|שכר|salary|wage/i.test(description)) return 'salary';
     if (/פרילנס|freelance|שירות/i.test(description)) return 'freelance';
-    return 'other-income';
+    if (/דיבידנד|ריבית|השקעות|s&p|מניות|קרן נאמנות/i.test(description)) return 'investments';
+    if (/מתנה|נתנו לי/i.test(description)) return 'gift_income';
+    return 'other_income';
   }
   const d = description.toLowerCase();
-  if (/סופר|מעדניה|שוק|שופרסל|רמי לוי|victory|mega|yochananof/i.test(d)) return 'shopping';
-  if (/מסעדה|קפה|אוכל|פיצה|בורגר|sushi|cafe|coffee|restaurant|pizza|burger/i.test(d)) return 'restaurants';
-  if (/דלק|סונול|פז|elf|delek|fuel|חניה|parking/i.test(d)) return 'car';
-  if (/ביטוח|insurance/i.test(d)) return 'bills';
-  if (/חשמל|מים|גז|ועד בית|בזק|hot|yes|partner|cellcom|012|013|electric/i.test(d)) return 'bills';
-  if (/בריאות|רופא|מאוחדת|כללית|מכבי|pharmacy|אחות|קופת חולים/i.test(d)) return 'health';
-  if (/חינוך|גן ילדים|בי"ס|אוניברסיטה|טכניון|course|לימוד|תואר/i.test(d)) return 'education';
-  if (/נסיעות|אל על|arkia|flight|airbnb|booking|hotel|מלון/i.test(d)) return 'travel';
-  if (/אמזון|amazon|aliexpress|ebay|online/i.test(d)) return 'shopping';
-  if (/ספורט|gym|מכון כושר|pool|בריכה/i.test(d)) return 'sports';
-  if (/טכנולוגיה|apple|google|microsoft|spotify|netflix|software/i.test(d)) return 'technology';
-  return 'other';
+  if (/סופר|מעדניה|שוק|שופרסל|רמי לוי|victory|mega|yochananof|אושר עד|טיב טעם/i.test(d)) return 'groceries';
+  if (/מסעדה|קפה|אוכל|פיצה|בורגר|sushi|cafe|coffee|restaurant|pizza|burger|wolt|10ביס|תן ביס/i.test(d)) return 'food';
+  if (/דלק|סונול|פז|elf|delek|fuel|חניה|חנייה|parking|טסלה|כביש 6|רב.?קו|רכבת|אוטובוס/i.test(d)) return 'car';
+  if (/חשמל|מים|גז|ועד בית|בזק|hot|yes|partner|cellcom|012|013|electric|ביטוח|insurance|ארנונה/i.test(d)) return 'utilities';
+  if (/סלולר|פלאפון|פרטנר|הוט מובייל|גולן טלקום/i.test(d)) return 'phone';
+  if (/בריאות|רופא|מאוחדת|כללית|מכבי|pharmacy|בית מרקחת|קופת חולים|דנטל|שיניים|סופר.?פארם|super.?pharm/i.test(d)) return 'health';
+  if (/חינוך|גן ילדים|בי"ס|אוניברסיטה|טכניון|מכללה|course|udemy|coursera|לימוד|תואר|הרצאה|סמינר/i.test(d)) return 'education';
+  if (/אל על|arkia|flight|airbnb|booking|hotel|מלון|טיסה|חופשה|נופש/i.test(d)) return 'travel';
+  if (/zara|h&m|fox|castro|פוקס|קסטרו|זארה|ביגוד|נעליים|חולצה|מכנסיים/i.test(d)) return 'clothing';
+  if (/מספרה|תספורת|טיפוח|איפור|קוסמטיקה|מניקור|פדיקור|spa|ספא|מסאז/i.test(d)) return 'beauty';
+  if (/מתנה|יום הולדת|חתונה|בר מצווה|בת מצווה|ברית/i.test(d)) return 'gifts';
+  if (/ספורט|gym|חדר כושר|מנוי כושר|הולמס|crossfit|פילאטיס|יוגה|אופניים|pool|בריכה/i.test(d)) return 'sport';
+  if (/apple|google|microsoft|אייפון|iphone|מקבוק|macbook|מחשב|לפטופ|laptop|software|תוכנה|מנוי דיגיטלי|airpods/i.test(d)) return 'tech';
+  if (/netflix|spotify|disney|youtube premium|נטפליקס|ספוטיפיי|דיסני|סינמטק|סרט|הצגה|תיאטרון|בידור/i.test(d)) return 'entertainment';
+  if (/שכירות|שכר.?דירה|דירה לשכור/i.test(d)) return 'rent';
+  if (/אמזון|amazon|aliexpress|ebay/i.test(d)) return 'groceries';
+  return 'other_expense';
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -148,18 +161,45 @@ async function scrapeOne(connection) {
 
   const credentials = decryptCredentials(connection.credentials_encrypted);
 
-  const startDate = new Date();
-  startDate.setDate(startDate.getDate() - DAYS_BACK);
+  // BANK_START_DATE (e.g. "2026-01-01") takes precedence — fixed calendar start.
+  // Otherwise fall back to a rolling DAYS_BACK window.
+  let startDate;
+  if (process.env.BANK_START_DATE) {
+    startDate = new Date(process.env.BANK_START_DATE);
+  } else {
+    startDate = new Date();
+    startDate.setDate(startDate.getDate() - DAYS_BACK);
+  }
 
-  const scraper = createScraper({
+  // For OTP-enforcing providers (Max), reuse a persistent browser profile so
+  // the device stays "trusted" and no SMS code is needed on each run.
+  const profileDir = PROFILE_BANKS[bank_id];
+  let ownBrowser = null;
+  const scraperOpts = {
     companyId: company,
     startDate,
     combineInstallments: false,
     showBrowser: false,
     args: ['--no-sandbox', '--disable-setuid-sandbox'],
-  });
+  };
+  if (profileDir) {
+    ownBrowser = await puppeteer.launch({
+      headless: true,
+      userDataDir: profileDir,
+      args: ['--no-sandbox', '--disable-setuid-sandbox'],
+    });
+    scraperOpts.browser = ownBrowser;
+    scraperOpts.skipCloseBrowser = true;
+  }
 
-  const result = await scraper.scrape(credentials);
+  const scraper = createScraper(scraperOpts);
+
+  let result;
+  try {
+    result = await scraper.scrape(credentials);
+  } finally {
+    if (ownBrowser) { try { await ownBrowser.close(); } catch { /* ignore */ } }
+  }
   if (!result.success) {
     throw new Error(`${result.errorType}: ${result.errorMessage}`);
   }
