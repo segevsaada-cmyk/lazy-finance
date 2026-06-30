@@ -208,13 +208,15 @@ function askClaude(history) {
       ? `שיחה עד כה:\n${transcript}\n\n--- שאלה חדשה ---\n${userTurn}`
       : userTurn;
 
-    const args = [
-      '--print',
-      '--model', 'sonnet',
-      '--append-system-prompt', KNOWLEDGE,
-      fullPrompt,
-    ];
-    const child = spawn('claude', args, { stdio: ['ignore', 'pipe', 'pipe'] });
+    let ctx = '', sales = '', objections = '';
+    try { ctx = fs.readFileSync(path.join(__dirname, '..', 'brief-context.md'), 'utf8'); } catch {}
+    try { sales = fs.readFileSync(path.join(__dirname, '..', 'sales-playbook.md'), 'utf8'); } catch {}
+    try { objections = fs.readFileSync(path.join(__dirname, '..', 'objections-full.md'), 'utf8'); } catch {}
+    sales = sales + '\n\n' + objections;
+    const persona = `אתה העוזר העסקי + מאמן המכירות של שגב (מאמן לילדים ונוער, בעל "סופר קידס"). ענה בעברית, קצר וישיר. כלל ברזל: לעולם לא משקל/דיאטה/קלוריות — רק ביטחון עצמי, רגש, שמחת תנועה. אתה יכול: לענות על שאלות עסקיות/פיננסיות; לאמן מכירות; ולשחק "הורה מתנגד" ל-roleplay כשמבקשים (תתנגד מציאותית, ואז תן פידבק קצר על התשובה של שגב). הסתמך על:\n\n=== הקשר עסקי ===\n${ctx}\n\n=== מערכת מכירות ===\n${sales}\n\n=== ידע פיננסי ===\n${KNOWLEDGE}`;
+    const args = ['--print', '--model', 'sonnet', '--append-system-prompt', persona, fullPrompt];
+    const env = { ...process.env }; delete env.ANTHROPIC_API_KEY;
+    const child = spawn('claude', args, { stdio: ['ignore', 'pipe', 'pipe'], env });
     let stdout = '', stderr = '';
     child.stdout.on('data', d => { stdout += d.toString(); });
     child.stderr.on('data', d => { stderr += d.toString(); });
@@ -243,6 +245,47 @@ function toJid(phone) {
   return `${normalized}@s.whatsapp.net`;
 }
 
+// ── Calendar command helpers (bot → Google Calendar via super-kids edge fn) ──
+const SK_FUNCTIONS_URL = process.env.SK_FUNCTIONS_URL || '';
+const SK_SERVICE_KEY = process.env.SK_SERVICE_KEY || '';
+const HEB_DAYS = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי', 'שבת'];
+function claudeParseJSON(prompt) {
+  return new Promise((resolve, reject) => {
+    const env = { ...process.env }; delete env.ANTHROPIC_API_KEY;
+    const child = spawn('claude', ['-p', '--model', 'sonnet', prompt], { stdio: ['ignore', 'pipe', 'pipe'], env });
+    let out = '', err = '';
+    child.stdout.on('data', d => { out += d.toString(); });
+    child.stderr.on('data', d => { err += d.toString(); });
+    const t = setTimeout(() => { child.kill('SIGTERM'); reject(new Error('claude timeout')); }, 60000);
+    child.on('error', e => { clearTimeout(t); reject(e); });
+    child.on('close', c => { clearTimeout(t); c === 0 ? resolve(out.trim()) : reject(new Error('claude exit ' + c)); });
+  });
+}
+async function addCalendarEvent(desc) {
+  if (!SK_FUNCTIONS_URL || !SK_SERVICE_KEY) throw new Error('יומן לא מוגדר (חסר SK_*)');
+  const now = new Date();
+  const pad = n => String(n).padStart(2, '0');
+  const today = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+  const prompt = `היום ${today}, יום ${HEB_DAYS[now.getDay()]}. נתח את תיאור האימון והחזר אך ורק JSON תקין: {"summary":"כותרת קצרה","date":"YYYY-MM-DD","start":"HH:MM","duration_min":45}. פתור ימים יחסיים (היום/מחר/ראשון עד שבת) למופע הקרוב הבא. ברירת מחדל משך 45 דקות. תיאור: "${desc}". החזר JSON בלבד.`;
+  const raw = await claudeParseJSON(prompt);
+  const m = raw.match(/\{[\s\S]*\}/);
+  if (!m) throw new Error('לא הצלחתי לפענח את הפרטים');
+  const ev = JSON.parse(m[0]);
+  const [h, mi] = String(ev.start).split(':').map(Number);
+  const dur = Number(ev.duration_min) || 45;
+  const endMin = h * 60 + mi + dur;
+  const startISO = `${ev.date}T${pad(h)}:${pad(mi)}:00+03:00`;
+  const endISO = `${ev.date}T${pad(Math.floor(endMin / 60) % 24)}:${pad(endMin % 60)}:00+03:00`;
+  const res = await fetch(`${SK_FUNCTIONS_URL}/gcal-add-event`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${SK_SERVICE_KEY}` },
+    body: JSON.stringify({ summary: ev.summary, startISO, endISO, description: desc }),
+  });
+  const j = await res.json();
+  if (!j.ok) throw new Error(j.error || 'שגיאת יומן');
+  return { summary: ev.summary, date: ev.date, start: ev.start };
+}
+
 async function connect() {
   const { state, saveCreds } = await useMultiFileAuthState('./auth_state');
   const { version } = await fetchLatestBaileysVersion();
@@ -266,6 +309,20 @@ async function connect() {
   });
 
   sock.ev.on('creds.update', saveCreds);
+
+  // Pairing-code login (more reliable than QR scanning — "Link with phone
+  // number instead"). Enabled by setting PAIR_PHONE=972XXXXXXXXX in .env.
+  // Only fires when the session is not yet registered.
+  if (process.env.PAIR_PHONE && !sock.authState.creds.registered) {
+    setTimeout(async () => {
+      try {
+        const code = await sock.requestPairingCode(process.env.PAIR_PHONE.replace(/\D/g, ''));
+        const pretty = code?.match(/.{1,4}/g)?.join('-') || code;
+        console.log(`\n🔗🔗 PAIRING CODE: ${pretty}\n   WhatsApp → Linked Devices → "Link with phone number instead"\n`);
+        try { fs.writeFileSync('/tmp/wa-pairing-code.txt', pretty); } catch (_) {}
+      } catch (e) { console.error('❌ pairing code error:', e.message); }
+    }, 3000);
+  }
 
   // Track message IDs we sent to prevent loops
   const sentMessageIds = new Set();
@@ -330,15 +387,17 @@ async function connect() {
         if (chatJid.endsWith('@g.us')) continue;
         if (chatJid.endsWith('@broadcast')) continue;
         if (chatJid.endsWith('@status')) continue;
-        // Skip our own outbound messages
-        if (msg.key.fromMe) continue;
+        // Allow the owner's "message yourself" notes (fromMe → own number);
+        // still skip our own outbound to OTHER chats.
+        const isSelfChat = msg.key.fromMe && chatJid === myJid;
+        if (msg.key.fromMe && !isSelfChat) continue;
         if (msg.key.id && sentMessageIds.has(msg.key.id)) continue;
 
         // Identify the sender across both formats
-        let allowed = false;
+        let allowed = isSelfChat;
         if (chatJid.endsWith('@s.whatsapp.net')) {
           const senderPhone = chatJid.replace(/@.*/, '');
-          if (ALLOWED_PHONES.includes(senderPhone)) {
+          if (isSelfChat || ALLOWED_PHONES.includes(senderPhone)) {
             allowed = true;
           } else {
             console.log(`🚫 phone NOT whitelisted: ${senderPhone}`);
@@ -371,6 +430,71 @@ async function connect() {
         if (!text.trim()) continue;
         if (text.startsWith(BOT_MARKER)) continue;
         const cleanText = text.trim();
+
+        // --- Morning-brief task inbox ---
+        // Owner notes sent during the day are saved for the 06:00 brief.
+        //   "נקה"/"אפס משימות"  → clear the list
+        //   "משימות"            → list current tasks
+        //   "?<question>"       → route to the finance advisor (falls through)
+        //   anything else       → saved as a task ("✅ נשמר")
+        const TASKS_FILE = path.join(__dirname, '..', 'morning_tasks.json');
+        const cmd = cleanText.replace(/[!.׃:]/g, '').trim();
+        const replyOwner = async (t) => {
+          const s = await sock.sendMessage(chatJid, { text: `${BOT_MARKER} ${t}` });
+          if (s?.key?.id) sentMessageIds.add(s.key.id);
+        };
+        if (cleanText.startsWith('יומן')) {
+          const desc = cleanText.replace(/^יומן[:\s]+/, '').trim();
+          if (!desc) {
+            await replyOwner('📅 כתוב: יומן: <תיאור> <יום> <שעה>\nלמשל: יומן: זוגי דניאל ורעי שלישי 19:30');
+          } else {
+            try {
+              const ev = await addCalendarEvent(desc);
+              await replyOwner(`✅ נוסף ליומן: ${ev.summary}\n📅 ${ev.date} בשעה ${ev.start}`);
+            } catch (e) { await replyOwner(`❌ לא הצלחתי להוסיף ליומן: ${e.message}`); }
+          }
+          continue;
+        }
+        if (['נקה', 'נקה משימות', 'אפס', 'אפס משימות'].includes(cmd)) {
+          try { fs.writeFileSync(TASKS_FILE, '[]'); } catch {}
+          await replyOwner('🧹 רשימת המשימות אופסה.');
+          continue;
+        }
+        if (['משימות', 'מה המשימות', 'רשימה'].includes(cmd)) {
+          let list = '(אין משימות פתוחות)';
+          try {
+            const a = JSON.parse(fs.readFileSync(TASKS_FILE, 'utf8')).filter(t => !t.done);
+            if (a.length) list = a.map((t, i) => `${i + 1}. ${t.text}`).join('\n');
+          } catch {}
+          await replyOwner(`📋 המשימות שלך:\n${list}`);
+          continue;
+        }
+        // "זכור:" / "תזכור:" → append to durable business memory (brief-context)
+        if (/^(זכור|תזכור)[\s:]/.test(cleanText)) {
+          const note = cleanText.replace(/^(זכור|תזכור)[\s:]+/, '').trim();
+          try {
+            const ctxPath = path.join(__dirname, '..', 'brief-context.md');
+            const stamp = new Date().toISOString().slice(0, 10);
+            fs.appendFileSync(ctxPath, `\n- (${stamp}) ${note}`);
+            await replyOwner(`🧠 שמרתי בזיכרון: ${note}`);
+          } catch (e) { await replyOwner(`❌ לא הצלחתי לשמור: ${e.message}`); }
+          continue;
+        }
+        // "משימה:" / "תזכורת:" → add to the morning-brief task list
+        if (/^(משימה|תזכורת)[\s:]/.test(cleanText)) {
+          const t = cleanText.replace(/^(משימה|תזכורת)[\s:]+/, '').trim();
+          let count = 0;
+          try {
+            let arr = []; try { arr = JSON.parse(fs.readFileSync(TASKS_FILE, 'utf8')); } catch {}
+            if (!Array.isArray(arr)) arr = [];
+            arr.push({ text: t, ts: new Date().toISOString(), done: false });
+            fs.writeFileSync(TASKS_FILE, JSON.stringify(arr, null, 2));
+            count = arr.filter(x => !x.done).length;
+          } catch (e) { console.error('task save error:', e.message); }
+          await replyOwner(`✅ נוסף למשימות (${count} במאגר)`);
+          continue;
+        }
+        // anything else → conversational assistant (with business context)
 
         const history = conversationHistory.get(chatJid) || [];
         history.push({ role: 'user', content: cleanText });
@@ -516,6 +640,51 @@ app.post('/send-media', requireKey, async (req, res) => {
     console.error('[send-media error]', e);
     res.status(500).json({ error: e.message });
   }
+});
+
+// Fetch a publicly-hosted video URL and broadcast as a WhatsApp video
+// message with caption — used by Super Kids welcome flow (baileys-send-roi
+// edge function) so video files don't need to be on this server's disk
+// inside MEDIA_DIR. Same security as other endpoints (requireKey).
+app.post('/broadcast-video-url', requireKey, async (req, res) => {
+  if (!isConnected) return res.status(503).json({ error: 'WhatsApp not connected' });
+  const { phones, videoUrl, caption } = req.body || {};
+  if (!phones?.length || !videoUrl) {
+    return res.status(400).json({ error: 'phones[] and videoUrl required' });
+  }
+  let videoBuffer;
+  try {
+    const r = await fetch(videoUrl);
+    if (!r.ok) return res.status(400).json({ error: `fetch ${r.status} for ${videoUrl}` });
+    videoBuffer = Buffer.from(await r.arrayBuffer());
+  } catch (e) {
+    return res.status(400).json({ error: `fetch failed: ${e.message}` });
+  }
+  if (videoBuffer.length > 16 * 1024 * 1024) {
+    return res.status(400).json({ error: `video too large: ${videoBuffer.length} bytes` });
+  }
+  const results = { sent: 0, failed: 0, errors: [] };
+  for (let i = 0; i < phones.length; i++) {
+    const phone = phones[i];
+    try {
+      await sock.sendMessage(toJid(phone), {
+        video: videoBuffer,
+        caption: caption || '',
+        mimetype: 'video/mp4',
+        gifPlayback: false,
+        ptv: false,
+      });
+      results.sent++;
+    } catch (e) {
+      results.failed++;
+      results.errors.push({ phone, error: e.message });
+    }
+    if (i < phones.length - 1) {
+      const delay = 8000 + Math.floor(Math.random() * 4001);
+      await new Promise(r => setTimeout(r, delay));
+    }
+  }
+  res.json(results);
 });
 
 app.get('/group/:jid', requireKey, async (req, res) => {
